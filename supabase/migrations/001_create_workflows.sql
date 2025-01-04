@@ -111,9 +111,9 @@ create trigger store_workflow_version_trigger
   for each row
   execute function store_workflow_version();
 
--- Enable Row Level Security (RLS)
-alter table workflows enable row level security;
-alter table workflow_versions enable row level security;
+-- Temporarily disable RLS for development
+alter table workflows disable row level security;
+alter table workflow_versions disable row level security;
 
 -- Create policies for workflows
 create policy "Users can view their own workflows"

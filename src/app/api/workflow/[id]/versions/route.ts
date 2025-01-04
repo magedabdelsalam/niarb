@@ -7,16 +7,16 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const workflowId = params.id
+    const { id } = await params
 
     // Check if workflow exists
     const { data: workflow, error: workflowError } = await supabase
       .from('workflows')
       .select('id')
-      .eq('id', workflowId)
+      .eq('id', id)
       .single()
 
     if (workflowError || !workflow) {
@@ -30,7 +30,7 @@ export async function GET(
     const { data: versions, error: versionsError } = await supabase
       .from('workflows')
       .select('version')
-      .eq('id', workflowId)
+      .eq('id', id)
       .order('version', { ascending: false })
       .limit(1)
 

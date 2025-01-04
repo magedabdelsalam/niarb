@@ -193,18 +193,29 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
   return (
     <div className="flex flex-col gap-6 p-4">
       <header className="flex items-center justify-between">
-        <button
-          onClick={() => router.push('/')}
-          className="text-2xl font-bold hover:opacity-80 transition-opacity"
-        >
-          NIARB
-        </button>
-        <Input
+      <button
+            onClick={() => router.push('/')}
+            className="text-2xl font-bold hover:opacity-80 transition-opacity"
+            >
+            NIARB
+            </button>
+        <div className="flex items-center gap-2">
+
+            <Input
           className="w-64 text-xl font-medium text-center"
           value={workflow.name || ''}
           onChange={(e) => handleWorkflowUpdate({ name: e.target.value })}
           placeholder="Enter Workflow Name"
         />
+            <Button
+                variant="outline"
+                onClick={() => router.push(`/playground/${workflow.id}/live`)}
+            >
+                Live
+            </Button>
+        </div>
+
+
         <div className="space-x-2">
           {workflow.id && (
             <>
@@ -226,7 +237,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
                 onClick={handlePublish}
                 disabled={isPublishing}
               >
-                {isPublishing ? 'Publishing...' : 'Publish'}
+                {isPublishing ? 'Publishing...' : `Publish v${(workflow.version || 1) + 1}`}
               </Button>
             </>
           )}
