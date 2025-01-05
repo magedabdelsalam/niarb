@@ -21,9 +21,10 @@ import {
 } from "./ui/select"
 
 const defaultWorkflow: Workflow = {
+  id: '',
   name: '',
   input_schema: [],
-  input_data: '',
+  input_data: {},
   logic_blocks: [],
   calculations: [],
   output_schema: {}
@@ -50,35 +51,23 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
   useEffect(() => {
     if (initialWorkflow) {
       setWorkflow(initialWorkflow)
+      setTotalVersions(initialWorkflow.version || 1)
     }
   }, [initialWorkflow])
 
-  // Fetch total versions when component mounts or workflow ID changes
+  // Subscribe to workflow updates and version changes
   useEffect(() => {
-    async function fetchTotalVersions() {
-      if (!workflow.id) {
-        setTotalVersions(1)
-        return
-      }
+    if (!workflow.id) return
 
-      try {
-        const response = await fetch(`/api/workflow/${workflow.id}/versions`)
-        const data = await response.json()
-        
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch versions')
-        }
+    const subscription = subscribeToWorkflow(workflow.id, (updatedWorkflow) => {
+      setWorkflow(updatedWorkflow)
+      setTotalVersions(updatedWorkflow.version || 1)
+    })
 
-        setTotalVersions(data.totalVersions)
-      } catch (error) {
-        console.error('Error fetching versions:', error)
-        // Set to current version or 1 if not available
-        setTotalVersions(workflow.version || 1)
-      }
+    return () => {
+      subscription.unsubscribe()
     }
-
-    fetchTotalVersions()
-  }, [workflow.id, workflow.version])
+  }, [workflow.id])
 
   const handleInputChange = (input_schema: string[]) => {
     setWorkflow(prev => ({ ...prev, input_schema }))

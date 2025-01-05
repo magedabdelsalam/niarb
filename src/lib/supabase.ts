@@ -24,17 +24,10 @@ export function subscribeToWorkflow(
         table: 'workflows',
         filter: `id=eq.${workflowId}`,
       },
-      async (payload) => {
-        // Fetch the latest data to ensure we have everything
-        const { data } = await supabase
-          .from('workflows')
-          .select()
-          .eq('id', workflowId)
-          .single()
-        
-        if (data) {
-          console.log('Subscription received update:', data)
-          onUpdate(data as Workflow)
+      (payload) => {
+        if (payload.new) {
+          console.log('Subscription received update:', payload.new)
+          onUpdate(payload.new as Workflow)
         }
       }
     )
