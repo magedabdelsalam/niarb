@@ -7,10 +7,10 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string; version: string } }
+  { params }: { params: Promise<{ id: string; version: string }> }
 ) {
   try {
-    const { id, version } = params
+    const { id, version } = await params
 
     // Get current workflow to check latest version
     const { data: currentWorkflow, error: currentError } = await supabase
@@ -35,55 +35,36 @@ export async function GET(
         .eq('id', id)
         .single()
 
-      if (latestError || !latestData) {
-        console.error('Error fetching latest version:', latestError)
+      if (latestError) {
         return NextResponse.json(
-          { error: 'Latest version not found' },
-          { status: 404 }
+          { error: 'Failed to fetch latest version' },
+          { status: 500 }
         )
       }
 
-      return NextResponse.json({
-        workflow: latestData
-      })
+      return NextResponse.json({ workflow: latestData })
     }
 
-    // Otherwise, get historical version from workflow_versions
+    // Otherwise, get the specific version from workflow_versions
     const { data: versionData, error: versionError } = await supabase
       .from('workflow_versions')
       .select('*')
       .eq('workflow_id', id)
-      .eq('version', version)
+      .eq('version', parseInt(version))
       .single()
 
-    if (versionError || !versionData) {
-      console.error('Error fetching version:', versionError)
+    if (versionError) {
       return NextResponse.json(
-        { error: 'Version not found' },
-        { status: 404 }
+        { error: 'Failed to fetch version' },
+        { status: 500 }
       )
     }
 
-    // Parse the data field which contains the full workflow data
-    const workflowData = versionData.data as any
-
-    // Return the workflow data with the correct structure
-    return NextResponse.json({
-      workflow: {
-        id,
-        name: workflowData.name,
-        input_schema: workflowData.input_schema,
-        input_data: typeof workflowData.input_data === 'string' ? JSON.parse(workflowData.input_data) : workflowData.input_data,
-        logic_blocks: workflowData.logic_blocks,
-        calculations: workflowData.calculations,
-        output_schema: workflowData.output_schema,
-        version: parseInt(version)
-      }
-    })
-  } catch (error) {
-    console.error('Error loading workflow version:', error)
+    return NextResponse.json({ workflow: versionData })
+  } catch (error: any) {
+    console.error('Error fetching workflow version:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error.message || 'Internal server error' },
       { status: 500 }
     )
   }

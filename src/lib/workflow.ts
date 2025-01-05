@@ -111,9 +111,11 @@ export function processWorkflow(
   const output: Record<string, any> = {}
 
   // Process logic blocks
-  for (const block of workflow.logic_blocks) {
-    output[block.output_name] = evaluateLogicBlock(block, inputData)
-    console.log('Block output:', { name: block.output_name, value: output[block.output_name] })
+  if (workflow.logic_blocks) {
+    for (const block of workflow.logic_blocks) {
+      output[block.output_name] = evaluateLogicBlock(block, inputData)
+      console.log('Block output:', { name: block.output_name, value: output[block.output_name] })
+    }
   }
 
   // Process calculations

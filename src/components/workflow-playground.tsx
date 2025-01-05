@@ -350,6 +350,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
         
         <Card className="p-4">
           <OutputSection
+            workflowId={workflow.id}
             workflow={workflow}
             onChange={handleWorkflowUpdate}
           />

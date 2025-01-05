@@ -9,15 +9,33 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertCircle } from "lucide-react"
 
 interface OutputSectionProps {
-  workflowId: string
-  workflow: Workflow
-  version?: number
-  onChange?: (output: Partial<Workflow>) => void
+  workflowId?: string;
+  workflow: Workflow;
+  version?: number;
+  onChange?: (output: Partial<Workflow>) => void;
+}
+
+interface LogicBlockDebug {
+  name: string
+  operation: string
+  input: unknown
+  expected: unknown
+  result: boolean
+}
+
+interface CalculationDebug {
+  name: string
+  formula: string
+  result: number
 }
 
 interface OutputState {
   data: OutputData
-  debug: string[]
+  debug: {
+    input: Record<string, unknown>
+    logicBlocks: LogicBlockDebug[]
+    calculations: CalculationDebug[]
+  }
   error?: string
   isLoading: boolean
 }
@@ -102,7 +120,11 @@ function getAllPaths(obj: Record<string, unknown>, prefix = ''): string[] {
 const getOutputData = async (workflowId: string, version?: number): Promise<OutputState> => {
   try {
     let data: OutputData = {}
-    let debug: string[] = []
+    let debug: OutputState['debug'] = {
+      input: {},
+      logicBlocks: [] as LogicBlockDebug[],
+      calculations: [] as CalculationDebug[]
+    }
     
     // Get workflow data
     const response = await fetch(`/api/workflow/${workflowId}${version ? `/version/${version}` : ''}`)
@@ -160,7 +182,7 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
         }
       }
     }
-    debug.push('Parsed input:', JSON.stringify(parsedInput, null, 2))
+    debug.input = parsedInput
 
     // Process logic blocks
     workflow.logic_blocks?.forEach((block: LogicBlock) => {
@@ -178,7 +200,13 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
         const errorMsg = `Error: Input ${block.input_name} not found. Available paths: ${availablePaths.join(', ')}`
         console.error(errorMsg);
         console.log('Full input structure:', JSON.stringify(parsedInput, null, 2));
-        debug.push(errorMsg)
+        debug.logicBlocks.push({
+          name: block.output_name,
+          operation: 'equal',
+          input: undefined,
+          expected: undefined,
+          result: false
+        })
         // Set default value even if input is not found
         data[block.output_name] = block.default_value || ""
         return
@@ -202,7 +230,13 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
               const normalizedInput = typeof comparisonValue === 'object' ? JSON.stringify(comparisonValue) : String(comparisonValue)
               const normalizedValue = typeof block.values?.[0] === 'object' ? JSON.stringify(block.values[0]) : String(block.values?.[0] || '')
               primaryResult = normalizedInput === normalizedValue
-              debug.push(`${JSON.stringify(comparisonValue)} === ${JSON.stringify(block.values?.[0])} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'equal',
+                input: comparisonValue,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             }
             case 'neq':
@@ -215,23 +249,53 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
               const neqInput = typeof neqComparisonValue === 'object' ? JSON.stringify(neqComparisonValue) : String(neqComparisonValue)
               const neqValue = typeof block.values?.[0] === 'object' ? JSON.stringify(block.values[0]) : String(block.values?.[0] || '')
               primaryResult = neqInput !== neqValue
-              debug.push(`${JSON.stringify(neqComparisonValue)} !== ${JSON.stringify(block.values?.[0])} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'neq',
+                input: neqComparisonValue,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'gt':
               primaryResult = Number(value) > Number(block.values?.[0] || 0)
-              debug.push(`${value} > ${block.values?.[0]} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'gt',
+                input: value,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'gte':
               primaryResult = Number(value) >= Number(block.values?.[0] || 0)
-              debug.push(`${value} >= ${block.values?.[0]} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'gte',
+                input: value,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'lt':
               primaryResult = Number(value) < Number(block.values?.[0] || 0)
-              debug.push(`${value} < ${block.values?.[0]} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'lt',
+                input: value,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'lte':
               primaryResult = Number(value) <= Number(block.values?.[0] || 0)
-              debug.push(`${value} <= ${block.values?.[0]} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'lte',
+                input: value,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'in':
               let inComparisonValue = value;
@@ -243,24 +307,47 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
               const listValue = block.values?.[0]
               const list = typeof listValue === 'string' ? listValue.split(',').map((v: string) => v.trim()) : []
               primaryResult = list.includes(String(inComparisonValue))
-              // Only store the result once, without array index
-              debug.push(`"${inComparisonValue}" in [${list.join(', ')}] -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'in',
+                input: inComparisonValue,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'is':
               const isNull = block.values?.[0] === 'null'
               primaryResult = isNull ? value === null : value !== null
-              debug.push(`${value} is ${isNull ? 'null' : 'not null'} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'is',
+                input: value,
+                expected: block.values?.[0],
+                result: primaryResult
+              })
               break
             case 'between':
               const numValue = Number(value)
               const min = Number(block.values?.[0] || 0)
               const max = Number(block.values?.[1] || 0)
               primaryResult = numValue >= min && numValue <= max
-              debug.push(`${min} <= ${numValue} <= ${max} -> ${primaryResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'between',
+                input: value,
+                expected: { min, max },
+                result: primaryResult
+              })
               break
             case 'has':
               const hasResult = String(value).toLowerCase().includes(String(block.values?.[0] || '').toLowerCase())
-              debug.push(`"${value}" has "${block.values?.[0]}" -> ${hasResult}`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: 'has',
+                input: value,
+                expected: block.values?.[0],
+                result: hasResult
+              })
               primaryResult = hasResult
               break
           }
@@ -275,7 +362,13 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
           try {
             const conditionValue = getNestedValue(parsedInput, condition.input_name, data)
             if (conditionValue === undefined) {
-              debug.push(`Error: Input ${condition.input_name} not found`)
+              debug.logicBlocks.push({
+                name: block.output_name,
+                operation: condition.operation,
+                input: undefined,
+                expected: undefined,
+                result: false
+              })
               return
             }
 
@@ -289,48 +382,102 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
                 const normalizedCondInput = typeof condValue === 'object' ? JSON.stringify(condValue) : String(condValue)
                 const normalizedCondValue = typeof condition.values?.[0] === 'object' ? JSON.stringify(condition.values[0]) : String(condition.values?.[0] || '')
                 conditionResult = normalizedCondInput === normalizedCondValue
-                debug.push(`${JSON.stringify(condValue)} === ${JSON.stringify(condition.values?.[0])} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'equal',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               }
               case 'neq':
                 const neqCondInput = typeof condValue === 'object' ? JSON.stringify(condValue) : String(condValue)
                 const neqCondValue = typeof condition.values?.[0] === 'object' ? JSON.stringify(condition.values[0]) : String(condition.values?.[0] || '')
                 conditionResult = neqCondInput !== neqCondValue
-                debug.push(`${JSON.stringify(condValue)} !== ${JSON.stringify(condition.values?.[0])} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'neq',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'gt':
                 conditionResult = Number(condValue) > Number(condition.values?.[0] || 0)
-                debug.push(`${condValue} > ${condition.values?.[0]} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'gt',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'gte':
                 conditionResult = Number(condValue) >= Number(condition.values?.[0] || 0)
-                debug.push(`${condValue} >= ${condition.values?.[0]} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'gte',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'lt':
                 conditionResult = Number(condValue) < Number(condition.values?.[0] || 0)
-                debug.push(`${condValue} < ${condition.values?.[0]} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'lt',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'lte':
                 conditionResult = Number(condValue) <= Number(condition.values?.[0] || 0)
-                debug.push(`${condValue} <= ${condition.values?.[0]} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'lte',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'in':
                 const listValue = condition.values?.[0]
                 const list = typeof listValue === 'string' ? listValue.split(',').map((v: string) => v.trim()) : []
                 conditionResult = list.includes(String(condValue))
-                debug.push(`${condValue} in [${list.join(', ')}] -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'in',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'is':
                 const isNull = condition.values?.[0] === 'null'
                 conditionResult = isNull ? condValue === null : condValue !== null
-                debug.push(`${condValue} is ${isNull ? 'null' : 'not null'} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'is',
+                  input: condValue,
+                  expected: condition.values?.[0],
+                  result: conditionResult
+                })
                 break
               case 'between':
                 const value = Number(condValue)
                 const min = Number(condition.values?.[0] || 0)
                 const max = Number(condition.values?.[1] || 0)
                 conditionResult = value >= min && value <= max
-                debug.push(`${min} <= ${value} <= ${max} -> ${conditionResult}`)
+                debug.logicBlocks.push({
+                  name: block.output_name,
+                  operation: 'between',
+                  input: value,
+                  expected: { min, max },
+                  result: conditionResult
+                })
                 break
             }
 
@@ -458,7 +605,11 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
           }
           
           data[calc.output_name] = result
-          debug.push(`${formula} -> ${result}`)
+          debug.calculations.push({
+            name: calc.output_name,
+            formula: formula,
+            result: result
+          })
         } catch (evalError) {
           console.error('Error evaluating formula:', {
             original_formula: rawFormula,
@@ -468,12 +619,20 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
             stack: evalError instanceof Error ? evalError.stack : undefined
           })
           data[calc.output_name] = 0 // Default to 0 on error
-          debug.push(`Error: ${evalError}`)
+          debug.calculations.push({
+            name: calc.output_name,
+            formula: formula,
+            result: 0
+          })
         }
       } catch (error) {
         console.error(`Error processing calculation ${calc.output_name}:`, error)
         data[calc.output_name] = 0 // Default to 0 on error
-        debug.push(`Error: ${error}`)
+        debug.calculations.push({
+          name: calc.output_name,
+          formula: calc.formula,
+          result: 0
+        })
       }
     })
 
@@ -482,7 +641,11 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
     console.error('Error in getOutputData:', error)
     return {
       data: {},
-      debug: [],
+      debug: {
+        input: {},
+        logicBlocks: [] as LogicBlockDebug[],
+        calculations: [] as CalculationDebug[]
+      },
       error: String(error),
       isLoading: false
     }
@@ -496,7 +659,11 @@ export function OutputSection({ workflowId, workflow, version, onChange }: Outpu
   const [totalVersions, setTotalVersions] = useState(workflow?.version || 1)
   const [outputData, setOutputData] = useState<OutputState>({ 
     data: {}, 
-    debug: [], 
+    debug: {
+      input: {},
+      logicBlocks: [] as LogicBlockDebug[],
+      calculations: [] as CalculationDebug[]
+    }, 
     error: undefined, 
     isLoading: false 
   })
@@ -588,12 +755,23 @@ export function OutputSection({ workflowId, workflow, version, onChange }: Outpu
         </pre>
       </div>
 
-      {showDebug && outputData.debug.length > 0 && (
+      {showDebug && outputData.debug.logicBlocks.length > 0 && (
         <div className="space-y-4">
           <div>
-            <h3 className="font-medium mb-2">Debug Info</h3>
-            <pre className="bg-muted p-4 rounded-md overflow-auto">
-              {outputData.debug.join('\n')}
+            <h3 className="font-medium mb-2">Logic Blocks</h3>
+            <pre className="bg-muted p-4 rounded-md overflow-auto whitespace-pre-wrap">
+              {JSON.stringify(outputData.debug.logicBlocks, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
+
+      {showDebug && outputData.debug.calculations.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-medium mb-2">Calculations</h3>
+            <pre className="bg-muted p-4 rounded-md overflow-auto whitespace-pre-wrap">
+              {JSON.stringify(outputData.debug.calculations, null, 2)}
             </pre>
           </div>
         </div>
