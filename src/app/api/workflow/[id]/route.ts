@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { Database } from '@/types/supabase'
+import type { Error } from '@/types/error'
 
 export async function PATCH(
   request: Request,
@@ -61,7 +62,7 @@ export async function PATCH(
     }
 
     return NextResponse.json({ workflow })
-  } catch (error: any) {
+  } catch (error: Error) {
     console.error('Error updating workflow:', error)
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
@@ -101,7 +102,7 @@ export async function DELETE(
     }
 
     return NextResponse.json({ message: 'Workflow deleted successfully' })
-  } catch (error: any) {
+  } catch (error: Error) {
     console.error('Error deleting workflow:', error)
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
@@ -142,7 +143,7 @@ export async function GET(
     }
 
     return NextResponse.json({ workflow })
-  } catch (error: any) {
+  } catch (error: Error) {
     console.error('Error fetching workflow:', error)
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
