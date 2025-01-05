@@ -6,84 +6,123 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type WorkflowStatus = 'draft' | 'published';
-
 export interface Database {
   public: {
     Tables: {
-      workflows: {
-        Row: {
-          id: string
-          name: string
-          input_data: string
-          input_schema: Json
-          logic_blocks: Json
-          calculations: Json
-          output_schema: Json
-          ai_model: Json | null
-          status: WorkflowStatus
-          created_at: string
-          updated_at: string
-          created_by: string | null
-          version: number
-          is_saving_draft: boolean
-        }
-        Insert: {
-          id?: string
-          name: string
-          input_data?: string
-          input_schema?: Json
-          logic_blocks?: Json
-          calculations?: Json
-          output_schema?: Json
-          ai_model?: Json | null
-          status?: WorkflowStatus
-          created_at?: string
-          updated_at?: string
-          created_by?: string | null
-          version?: number
-          is_saving_draft?: boolean
-        }
-        Update: {
-          id?: string
-          name?: string
-          input_data?: string
-          input_schema?: Json
-          logic_blocks?: Json
-          calculations?: Json
-          output_schema?: Json
-          ai_model?: Json | null
-          status?: WorkflowStatus
-          created_at?: string
-          updated_at?: string
-          created_by?: string | null
-          version?: number
-          is_saving_draft?: boolean
-        }
-      }
       workflow_inputs: {
         Row: {
           id: string
-          workflow_id: string
-          input_data: Json
-          output_data: Json | null
           created_at: string
+          workflow_id: string
+          input_data: Json | null
+          logic_data: Json | null
+          output_data: Json | null
+          workflow_version: number | null
         }
         Insert: {
           id?: string
-          workflow_id: string
-          input_data: Json
-          output_data?: Json | null
           created_at?: string
+          workflow_id: string
+          input_data?: Json | null
+          logic_data?: Json | null
+          output_data?: Json | null
+          workflow_version?: number | null
         }
         Update: {
           id?: string
-          workflow_id?: string
-          input_data?: Json
-          output_data?: Json | null
           created_at?: string
+          workflow_id?: string
+          input_data?: Json | null
+          logic_data?: Json | null
+          output_data?: Json | null
+          workflow_version?: number | null
         }
       }
+      workflow_versions: {
+        Row: {
+          id: string
+          created_at: string
+          workflow_id: string
+          version: number
+          name: string
+          input_schema: Json | null
+          input_data: Json | null
+          logic_blocks: Json | null
+          calculations: Json | null
+          output_schema: Json | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          workflow_id: string
+          version: number
+          name: string
+          input_schema?: Json | null
+          input_data?: Json | null
+          logic_blocks?: Json | null
+          calculations?: Json | null
+          output_schema?: Json | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          workflow_id?: string
+          version?: number
+          name?: string
+          input_schema?: Json | null
+          input_data?: Json | null
+          logic_blocks?: Json | null
+          calculations?: Json | null
+          output_schema?: Json | null
+        }
+      }
+      workflows: {
+        Row: {
+          id: string
+          created_at: string
+          name: string
+          input_schema: Json | null
+          input_data: Json | null
+          logic_blocks: Json | null
+          calculations: Json | null
+          output_schema: Json | null
+          version: number | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          name: string
+          input_schema?: Json | null
+          input_data?: Json | null
+          logic_blocks?: Json | null
+          calculations?: Json | null
+          output_schema?: Json | null
+          version?: number | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          name?: string
+          input_schema?: Json | null
+          input_data?: Json | null
+          logic_blocks?: Json | null
+          calculations?: Json | null
+          output_schema?: Json | null
+          version?: number | null
+        }
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 } 

@@ -13,8 +13,12 @@ export default async function Page({ params }: PageProps) {
   
   try {
     const workflow = await getWorkflow(id)
+    if (!workflow) {
+      return notFound()
+    }
     return <WorkflowPlayground initialWorkflow={workflow} />
   } catch (error) {
-    notFound()
+    console.error('Error loading workflow:', error)
+    return notFound()
   }
 } 

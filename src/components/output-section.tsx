@@ -37,33 +37,47 @@ function getNestedValue(obj: any, path: string, outputData: Record<string, any> 
     return outputData[path];
   }
   
-  // Handle array notation in path (e.g., "education[0].institution" or "education.0.institution")
-  const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1');
-  const keys = normalizedPath.split('.');
-  let result = obj;
+  // Try both direct path and input_data prefixed path
+  const paths = [
+    path,
+    path.startsWith('input_data.') ? path : `input_data.${path}`
+  ];
   
-  for (const key of keys) {
-    if (result === null || result === undefined) {
-      console.log(`Path traversal failed at ${key}, current value is ${result}`);
-      return undefined;
+  for (const currentPath of paths) {
+    // Handle array notation in path (e.g., "education[0].institution" or "education.0.institution")
+    const normalizedPath = currentPath.replace(/\[(\d+)\]/g, '.$1');
+    const keys = normalizedPath.split('.');
+    let result = obj;
+    let valid = true;
+    
+    for (const key of keys) {
+      if (result === null || result === undefined) {
+        valid = false;
+        break;
+      }
+      
+      // If we're at the final key and it's an array, return the whole array
+      if (Array.isArray(result) && keys.indexOf(key) === keys.length - 1) {
+        return result;
+      }
+      
+      // If we're at an intermediate array, get the specified index or first item
+      if (Array.isArray(result)) {
+        result = /^\d+$/.test(key) ? result[Number(key)] : result[0];
+      } else {
+        result = result[key];
+      }
     }
     
-    // If we're at the final key and it's an array, return the whole array
-    if (Array.isArray(result) && keys.indexOf(key) === keys.length - 1) {
+    if (valid && result !== undefined) {
       return result;
     }
-    
-    // If we're at an intermediate array, get the specified index or first item
-    if (Array.isArray(result)) {
-      result = /^\d+$/.test(key) ? result[Number(key)] : result[0];
-    } else {
-      result = result[key];
-    }
-    
-    console.log(`Accessing key ${key}, got value:`, result);
   }
   
-  return result;
+  // Get all available paths for error message
+  const availablePaths = getAllPaths(obj);
+  console.error(`Error: Input ${path} not found. Available paths: ${availablePaths.join(', ')}`);
+  return undefined;
 }
 
 // Helper function to get all nested paths
@@ -133,19 +147,23 @@ export function OutputSection({ workflow, onChange }: OutputSectionProps) {
       
       // Parse input data
       let parsedInput: Record<string, any> = {}
-      if (workflow.input_data && workflow.input_data.trim()) {
+      if (workflow.input_data) {
         try {
-          const cleanedInput = workflow.input_data.trim().replace(/^\uFEFF/, '')
-          const parsed = JSON.parse(cleanedInput)
-          
-          // Keep array structure if it's an array
-          parsedInput = parsed
+          // If it's already an object, use it directly
+          if (typeof workflow.input_data === 'object' && workflow.input_data !== null) {
+            parsedInput = workflow.input_data
+          } else if (typeof workflow.input_data === 'string' && workflow.input_data.trim()) {
+            // If it's a string, try to parse it
+            const cleanedInput = workflow.input_data.trim().replace(/^\uFEFF/, '')
+            const parsed = JSON.parse(cleanedInput)
+            parsedInput = parsed
+          }
           
           // Log the parsed input for debugging
           console.log('Parsed input:', parsedInput)
         } catch (error) {
           // If JSON parsing fails, try CSV
-          if (workflow.input_data.includes(',')) {
+          if (typeof workflow.input_data === 'string' && workflow.input_data.includes(',')) {
             const lines = workflow.input_data.split('\n').filter(Boolean)
             if (lines.length >= 2) {
               const headers = lines[0].split(',')
@@ -360,13 +378,13 @@ export function OutputSection({ workflow, onChange }: OutputSectionProps) {
         // Store results as an array if input was an array and has multiple items
         if (block.operation === 'in' || block.operation === 'has') {
           // For 'in' and 'has' operations, store a single result
-          data[block.output_name] = results.some(r => r.result) ? (block.output_value || "true") : (block.default_value || "false");
+          data[block.output_name] = results.some(r => r.result) ? (block.output_value || 20) : (block.default_value || 0);
         } else if (Array.isArray(inputValue) && results.length > 1) {
           // For other operations, keep array structure if input was an array
           data[block.output_name] = results.map(r => r.value);
         } else {
           // Store single value and ensure it's not undefined
-          data[block.output_name] = results[0]?.value || block.default_value || "";
+          data[block.output_name] = results[0]?.value || block.default_value || 0;
         }
       })
 
@@ -479,7 +497,7 @@ export function OutputSection({ workflow, onChange }: OutputSectionProps) {
           }
         } catch (error: any) {
           console.error(`Error processing calculation ${calc.output_name}:`, error)
-          data[calc.output_name] = ""
+          data[calc.output_name] = 0 // Default to 0 on error
           debug.calculationResults[calc.output_name] = `Error: ${error.message}`
         }
       })
@@ -504,7 +522,7 @@ export function OutputSection({ workflow, onChange }: OutputSectionProps) {
     
     // Initialize output schema if it doesn't exist
     if (!workflow.output_schema) {
-      const newSchema = Object.keys(result.data).reduce((acc, key) => ({
+      const newSchema: Record<string, boolean> = Object.keys(result.data).reduce((acc, key) => ({
         ...acc,
         [key]: true
       }), {})
@@ -514,8 +532,9 @@ export function OutputSection({ workflow, onChange }: OutputSectionProps) {
       })
     } else {
       // Filter by output schema - only include fields that are toggled on
+      const outputSchema = workflow.output_schema as Record<string, boolean>
       result.data = Object.fromEntries(
-        Object.entries(result.data).filter(([key]) => workflow.output_schema?.[key] !== false)
+        Object.entries(result.data).filter(([key]) => outputSchema[key] !== false)
       )
     }
     
@@ -574,11 +593,12 @@ export function OutputSection({ workflow, onChange }: OutputSectionProps) {
             <div key={key} className="flex items-center justify-between">
               <span>{key}</span>
               <Switch
-                checked={workflow.output_schema?.[key] !== false}
+                checked={workflow.output_schema ? (workflow.output_schema as Record<string, boolean>)[key] !== false : true}
                 onCheckedChange={(checked) => {
+                  const currentSchema = (workflow.output_schema || {}) as Record<string, boolean>
                   onChange({
                     output_schema: {
-                      ...workflow.output_schema,
+                      ...currentSchema,
                       [key]: checked
                     }
                   })

@@ -226,11 +226,11 @@ export default function LiveCharts({ workflow, initialData }: Props) {
     const date = new Date(item.created_at).toLocaleString();
     
     // Calculate success/error based on input validation
-    const inputSchema = workflow.input_schema as InputSchema;
+    const inputSchema = (workflow.input_schema as InputSchema) || [];
     const inputData = item.input_data as InputData;
-    const hasRequiredFields = inputSchema.every(field => 
+    const hasRequiredFields = Array.isArray(inputSchema) ? inputSchema.every(field => 
       field.required ? inputData && inputData[field.name] !== undefined : true
-    );
+    ) : true;
 
     return {
       date,
@@ -326,6 +326,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
               <Table containerClassName="max-h-[500px]">
                 <TableHeader sticky>
                   <TableRow>
+                    <TableHead className="w-4"></TableHead>
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Input ID</TableHead>
                     <TableHead>Workflow Version</TableHead>
@@ -343,7 +344,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                           <TableCell>
                             {new Date(item.created_at).toLocaleString()}
                           </TableCell>
-                          <TableCell className="font-mono text-xs">
+                          <TableCell className="font-mono">
                             {item.id}
                           </TableCell>
                           <TableCell>
@@ -379,19 +380,19 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                       <div className="grid grid-cols-3 gap-4 p-4">
                         <div>
                           <h4 className="font-medium mb-2">Input Data</h4>
-                          <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                          <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                             {JSON.stringify(typeof item.input_data === 'string' ? JSON.parse(item.input_data) : item.input_data, null, 2)}
                           </pre>
                         </div>
                         <div>
                           <h4 className="font-medium mb-2">Logic Data</h4>
-                          <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                          <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                             {JSON.stringify(item.logic_data, null, 2)}
                           </pre>
                         </div>
                         <div>
                           <h4 className="font-medium mb-2">Output Data</h4>
-                          <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                          <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                             {JSON.stringify(item.output_data, null, 2)}
                           </pre>
                         </div>
@@ -413,6 +414,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
               <Table containerClassName="max-h-[500px]">
                 <TableHeader sticky>
                   <TableRow>
+                    <TableHead className="w-4"></TableHead>
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Input ID</TableHead>
                     {inputKeys.map((key) => (
@@ -429,7 +431,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                           <TableCell>
                             {new Date(item.created_at).toLocaleString()}
                           </TableCell>
-                          <TableCell className="font-mono text-xs">
+                          <TableCell className="font-mono">
                             {item.id}
                           </TableCell>
                           {inputKeys.map((key) => (
@@ -457,7 +459,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                     >
                       <div className="p-4">
                         <h4 className="font-medium mb-2">Full Input Data</h4>
-                        <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                        <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                           {JSON.stringify(
                             typeof item.input_data === 'string' 
                               ? JSON.parse(item.input_data) 
@@ -484,6 +486,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
               <Table containerClassName="max-h-[500px]">
                 <TableHeader sticky>
                   <TableRow>
+                    <TableHead className="w-4"></TableHead>
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Input ID</TableHead>
                     <TableHead>Logic Blocks</TableHead>
@@ -499,7 +502,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                           <TableCell>
                             {new Date(item.created_at).toLocaleString()}
                           </TableCell>
-                          <TableCell className="font-mono text-xs">
+                          <TableCell className="font-mono">
                             {item.id}
                           </TableCell>
                           <TableCell>
@@ -524,13 +527,13 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                       <div className="grid grid-cols-2 gap-4 p-4">
                         <div>
                           <h4 className="font-medium mb-2">Logic Blocks</h4>
-                          <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                          <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                             {JSON.stringify(item.logic_data?.logic_blocks || [], null, 2)}
                           </pre>
                         </div>
                         <div>
                           <h4 className="font-medium mb-2">Calculations</h4>
-                          <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                          <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                             {JSON.stringify(item.logic_data?.calculations || [], null, 2)}
                           </pre>
                         </div>
@@ -552,6 +555,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
               <Table containerClassName="max-h-[500px]">
                 <TableHeader sticky>
                   <TableRow>
+                    <TableHead className="w-4"></TableHead>
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Input ID</TableHead>
                     {Array.from(new Set(filteredData.flatMap(item => 
@@ -570,7 +574,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                           <TableCell>
                             {new Date(item.created_at).toLocaleString()}
                           </TableCell>
-                          <TableCell className="font-mono text-xs">
+                          <TableCell className="font-mono">
                             {item.id}
                           </TableCell>
                           {Array.from(new Set(filteredData.flatMap(item => 
@@ -590,7 +594,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                     >
                       <div className="p-4">
                         <h4 className="font-medium mb-2">Full Output Data</h4>
-                        <pre className="whitespace-pre-wrap break-words text-xs bg-muted p-2 rounded-md">
+                        <pre className="whitespace-pre-wrap break-words bg-muted p-2 rounded-md">
                           {JSON.stringify(item.output_data, null, 2)}
                         </pre>
                       </div>

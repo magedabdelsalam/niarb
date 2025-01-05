@@ -231,6 +231,7 @@ export async function GET(
   try {
     const { searchParams } = new URL(request.url)
     const inputId = searchParams.get('input_id')
+    const version = searchParams.get('version')
     const { id } = await params
 
     if (!id) {
@@ -247,107 +248,101 @@ export async function GET(
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createClient()
 
-    // Get the workflow
-    const { data: workflow, error: workflowError } = await supabase
-      .from('workflows')
-      .select('*')
-      .eq('id', id)
-      .single()
+    // Get the workflow data based on version
+    let workflow
+    if (version) {
+      const versionNumber = parseInt(version)
+      console.log('Looking up version:', { workflowId: id, versionNumber })
+      
+      // First, check if we have duplicate versions
+      const { data: allVersions, error: versionsError } = await supabase
+        .from('workflow_versions')
+        .select('*')
+        .eq('workflow_id', id)
+        .eq('version', versionNumber)
+        .order('created_at', { ascending: false })
 
-    if (workflowError || !workflow) {
-      console.error('Workflow error:', workflowError)
-      return NextResponse.json(
-        { error: 'Workflow not found' },
-        { status: 404 }
-      )
+      if (versionsError) {
+        console.error('Version lookup error:', versionsError)
+        return NextResponse.json(
+          { error: 'Error looking up version' },
+          { status: 500 }
+        )
+      }
+
+      if (!allVersions || allVersions.length === 0) {
+        console.error('No versions found')
+        return NextResponse.json(
+          { error: 'Version not found' },
+          { status: 404 }
+        )
+      }
+
+      console.log(`Found ${allVersions.length} entries for version ${versionNumber}:`, 
+        allVersions.map(v => ({ id: v.id, created_at: v.created_at })))
+      
+      // Use the most recent version
+      workflow = allVersions[0].data
+    } else {
+      const { data: workflowData, error: workflowError } = await supabase
+        .from('workflows')
+        .select('*')
+        .eq('id', id)
+        .single()
+
+      if (workflowError || !workflowData) {
+        return NextResponse.json(
+          { error: 'Workflow not found' },
+          { status: 404 }
+        )
+      }
+      workflow = workflowData
     }
 
-    console.log('Found workflow:', {
-      id: workflow.id,
-      name: workflow.name,
-      logic_blocks: workflow.logic_blocks,
-      calculations: workflow.calculations,
-      output_schema: workflow.output_schema
-    })
-
-    // Get the workflow input
+    // Get the input data
     const { data: input, error: inputError } = await supabase
       .from('workflow_inputs')
       .select('*')
       .eq('id', inputId)
-      .eq('workflow_id', id)
       .single()
 
     if (inputError || !input) {
-      console.error('Input error:', inputError)
       return NextResponse.json(
         { error: 'Input not found' },
         { status: 404 }
       )
     }
 
-    console.log('Found input:', {
-      id: input.id,
-      workflow_id: input.workflow_id,
-      input_data: input.input_data
-    })
-
-    // Process the workflow
-    console.log('Starting workflow processing...')
-    console.log('Input data:', input.input_data)
-    console.log('Workflow configuration:', {
-      logic_blocks: workflow.logic_blocks,
-      calculations: workflow.calculations,
-      output_schema: workflow.output_schema
-    })
-    
-    // Always reprocess the workflow to get fresh output
+    // Process the workflow with the input data
     const output = processWorkflow(workflow, input.input_data)
-    console.log('Processed output:', output)
 
-    try {
-      // Save the output and logic to the database
-      const { error: updateError } = await supabase
-        .from('workflow_inputs')
-        .update({
-          output_data: output,
-          logic_data: {
-            logic_blocks: workflow.logic_blocks,
-            calculations: workflow.calculations
-          }
-        })
-        .eq('id', inputId)
-
-      if (updateError) {
-        console.error('Error saving output:', updateError)
-        return NextResponse.json(
-          { error: 'Failed to save output' },
-          { status: 500 }
-        )
-      }
-
-      // Return the processed output
-      return NextResponse.json({
-        output,
-        debug: {
-          input_data: input.input_data,
+    // Update the workflow input with the output and logic data
+    const { error: updateError } = await supabase
+      .from('workflow_inputs')
+      .update({
+        output_data: output,
+        logic_data: {
           logic_blocks: workflow.logic_blocks,
           calculations: workflow.calculations
         }
       })
-    } catch (error: any) {
-      console.error('Error saving output:', error)
+      .eq('id', inputId)
+
+    if (updateError) {
+      console.error('Error updating workflow input:', updateError)
       return NextResponse.json(
-        { error: error.message || 'Failed to save output' },
+        { error: 'Failed to update workflow input' },
         { status: 500 }
       )
     }
+
+    return NextResponse.json({ output })
   } catch (error: any) {
-    console.error('Error processing workflow:', error)
+    console.error('Error processing output:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to process workflow' },
+      { error: error.message || 'Internal server error' },
       { status: 500 }
     )
   }

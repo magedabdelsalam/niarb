@@ -12,18 +12,21 @@ import type { Workflow } from '@/types/workflow'
 import { createWorkflow, updateWorkflow, deleteWorkflow, publishWorkflowVersion } from '@/app/actions'
 import { subscribeToWorkflow } from '@/lib/supabase'
 import { Input } from './ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select"
 
 const defaultWorkflow: Workflow = {
-  id: '',
-  name: 'New Workflow',
+  name: '',
   input_schema: [],
   input_data: '',
   logic_blocks: [],
   calculations: [],
-  output_schema: {},
-  ai_model: {
-    model_name: ''
-  }
+  output_schema: {}
 }
 
 interface WorkflowPlaygroundProps {
@@ -33,20 +36,15 @@ interface WorkflowPlaygroundProps {
 export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const [workflow, setWorkflow] = useState<Workflow>({
-    id: initialWorkflow?.id,
-    name: initialWorkflow?.name || '',
-    input_schema: initialWorkflow?.input_schema || [],
-    input_data: initialWorkflow?.input_data || '',
-    logic_blocks: initialWorkflow?.logic_blocks || [],
-    calculations: initialWorkflow?.calculations || [],
-    output_schema: initialWorkflow?.output_schema || {},
-    ai_model: initialWorkflow?.ai_model,
-    version: initialWorkflow?.version
-  })
+  const [workflow, setWorkflow] = useState<Workflow>(
+    initialWorkflow || defaultWorkflow
+  )
   const [isSaving, setIsSaving] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isLoadingVersion, setIsLoadingVersion] = useState(false)
+  const [isMakingLatest, setIsMakingLatest] = useState(false)
+  const [totalVersions, setTotalVersions] = useState(1)
 
   // Update workflow when initialWorkflow changes (e.g., after page reload)
   useEffect(() => {
@@ -54,6 +52,33 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       setWorkflow(initialWorkflow)
     }
   }, [initialWorkflow])
+
+  // Fetch total versions when component mounts or workflow ID changes
+  useEffect(() => {
+    async function fetchTotalVersions() {
+      if (!workflow.id) {
+        setTotalVersions(1)
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/workflow/${workflow.id}/versions`)
+        const data = await response.json()
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to fetch versions')
+        }
+
+        setTotalVersions(data.totalVersions)
+      } catch (error) {
+        console.error('Error fetching versions:', error)
+        // Set to current version or 1 if not available
+        setTotalVersions(workflow.version || 1)
+      }
+    }
+
+    fetchTotalVersions()
+  }, [workflow.id, workflow.version])
 
   const handleInputChange = (input_schema: string[]) => {
     setWorkflow(prev => ({ ...prev, input_schema }))
@@ -64,8 +89,11 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     setWorkflow(prev => ({ ...prev, input_data }))
   }
 
-  const handleWorkflowUpdate = (updates: Partial<Workflow>) => {
-    setWorkflow(prev => ({ ...prev, ...updates }))
+  const handleWorkflowUpdate = (update: Partial<Workflow>) => {
+    setWorkflow(prev => ({
+      ...prev,
+      ...update
+    }))
   }
 
   const handleSave = async () => {
@@ -74,55 +102,30 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       // Prepare complete workflow data
       const workflowData = {
         name: workflow.name,
-        description: workflow.description,
         input_schema: workflow.input_schema,
         input_data: workflow.input_data || '',
-        example_dataset: workflow.example_dataset,
         logic_blocks: workflow.logic_blocks,
         calculations: workflow.calculations,
-        output_schema: workflow.output_schema,
-        ai_model: workflow.ai_model
+        output_schema: workflow.output_schema
       }
-
-      console.log('Saving workflow data:', workflowData)
 
       if (workflow.id) {
-        try {
-          await updateWorkflow(workflow.id, workflowData, true) // Save as draft
-          // After saving, reload the page to get fresh data
-          router.refresh()
-          toast({
-            title: "Success",
-            description: "Draft saved successfully"
-          })
-        } catch (updateError: any) {
-          console.error('Error updating workflow:', updateError)
-          toast({
-            title: "Error",
-            description: updateError.message || 'Failed to save',
-            variant: "destructive"
-          })
-        }
+        await updateWorkflow(workflow.id, workflowData)
+        router.refresh()
+        toast({
+          title: "Success",
+          description: "Workflow saved successfully"
+        })
       } else {
-        try {
-          const newWorkflow = await createWorkflow(workflowData)
-          console.log('New workflow created:', newWorkflow)
-          router.push(`/playground/${newWorkflow.id}`)
-          toast({
-            title: "Success",
-            description: "Workflow created successfully"
-          })
-        } catch (createError: any) {
-          console.error('Error creating workflow:', createError)
-          toast({
-            title: "Error",
-            description: createError.message || 'Failed to create workflow',
-            variant: "destructive"
-          })
-        }
+        const newWorkflow = await createWorkflow(workflowData)
+        router.push(`/playground/${newWorkflow.id}`)
+        toast({
+          title: "Success",
+          description: "Workflow created successfully"
+        })
       }
     } catch (error: any) {
-      console.error('Error in handleSave:', error)
+      console.error('Error saving workflow:', error)
       toast({
         title: "Error",
         description: error.message || 'Failed to save workflow',
@@ -143,8 +146,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
         input_data: workflow.input_data || '',
         logic_blocks: workflow.logic_blocks,
         calculations: workflow.calculations,
-        output_schema: workflow.output_schema,
-        ai_model: workflow.ai_model
+        output_schema: workflow.output_schema
       }
 
       if (workflow.id) {
@@ -190,31 +192,120 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     }
   }
 
+  const handleVersionChange = async (version: string) => {
+    try {
+      setIsLoadingVersion(true)
+      const response = await fetch(`/api/workflow/${workflow.id}/version/${version}`)
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load version')
+      }
+
+      handleWorkflowUpdate(data.workflow)
+      toast({
+        title: "Success",
+        description: `Loaded version ${version}`,
+      })
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || 'Failed to load version',
+      })
+    } finally {
+      setIsLoadingVersion(false)
+    }
+  }
+
+  const handleMakeLatest = async () => {
+    if (!workflow.id || !workflow.version) return
+
+    try {
+      setIsMakingLatest(true)
+      const response = await fetch(`/api/workflow/${workflow.id}/version/${workflow.version}/make-latest`, {
+        method: 'POST'
+      })
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to make version latest')
+      }
+
+      toast({
+        title: "Success",
+        description: `Version ${workflow.version} is now the latest version`,
+      })
+      // Refresh the page to get the updated data
+      window.location.reload()
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || 'Failed to make version latest',
+      })
+    } finally {
+      setIsMakingLatest(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6 p-4">
       <header className="flex items-center justify-between">
-      <button
+        <div className="flex items-center gap-4">
+          <button
             onClick={() => router.push('/')}
             className="text-2xl font-bold hover:opacity-80 transition-opacity"
-            >
-            NIARB
-            </button>
-        <div className="flex items-center gap-2">
-
-            <Input
-          className="w-64 text-xl font-medium text-center"
-          value={workflow.name || ''}
-          onChange={(e) => handleWorkflowUpdate({ name: e.target.value })}
-          placeholder="Enter Workflow Name"
-        />
-            <Button
-                variant="outline"
-                onClick={() => router.push(`/playground/${workflow.id}/live`)}
-            >
-                Live
-            </Button>
+        >
+          NIARB
+        </button>
+        <Button
+            variant="outline"
+            onClick={() => router.push(`/playground/${workflow.id}/live`)}
+          >
+            Live
+          </Button>
         </div>
-
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Input
+              className="w-64 text-xl font-medium text-center"
+              value={workflow.name || ''}
+              onChange={(e) => handleWorkflowUpdate({ name: e.target.value })}
+              placeholder="Enter Workflow Name"
+            />
+            {workflow.id && (
+              <>
+                <Select
+                  value={String(workflow.version || 1)}
+                  onValueChange={handleVersionChange}
+                  disabled={isLoadingVersion}
+                >
+                  <SelectTrigger className="w-[70px]">
+                    <SelectValue placeholder="v1" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: totalVersions }, (_, i) => i + 1).map((version) => (
+                      <SelectItem key={`version-${version}`} value={String(version)}>
+                        v{version}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {workflow.version && workflow.version < totalVersions && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMakeLatest}
+                    disabled={isMakingLatest}
+                  >
+                    {isMakingLatest ? 'Making Latest...' : 'Make Latest'}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
 
         <div className="space-x-2">
           {workflow.id && (

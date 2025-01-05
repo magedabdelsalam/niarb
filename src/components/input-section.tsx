@@ -12,9 +12,9 @@ import { useToast } from '@/hooks/use-toast'
 import { Label } from './ui/label'
 
 interface InputSectionProps {
-  workflow: Workflow
-  onInputChange: (input: string[]) => void
-  onInputDataChange: (data: string) => void
+  workflow: Pick<Workflow, 'id' | 'input_schema' | 'input_data' | 'version'>;
+  onInputChange: (input: string[]) => void;
+  onInputDataChange: (data: string) => void;
 }
 
 function extractAllKeys(data: any, prefix = ''): string[] {
@@ -49,25 +49,34 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [inputValue, setInputValue] = useState('')
-  const [testInput, setTestInput] = useState(workflow.input_data || '')
+  const [testInput, setTestInput] = useState('')
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
+  // Convert input_schema to string array
+  const inputSchema = Array.isArray(workflow.input_schema) 
+    ? workflow.input_schema.filter((item): item is string => typeof item === 'string')
+    : []
+
   // Update testInput when workflow.input_data changes
   useEffect(() => {
-    setTestInput(workflow.input_data || '')
+    if (typeof workflow.input_data === 'object' && workflow.input_data !== null) {
+      setTestInput(JSON.stringify(workflow.input_data, null, 2))
+    } else {
+      setTestInput(workflow.input_data?.toString() || '')
+    }
   }, [workflow.input_data])
 
   const handleAddInput = () => {
-    if (inputValue && !workflow.input_schema.includes(inputValue)) {
-      const newInputs = [...workflow.input_schema, inputValue]
+    if (inputValue && !inputSchema.includes(inputValue)) {
+      const newInputs = [...inputSchema, inputValue]
       onInputChange(newInputs)
       setInputValue('')
     }
   }
 
   const handleRemoveInput = (input: string) => {
-    const newInputs = workflow.input_schema.filter(i => i !== input)
+    const newInputs = inputSchema.filter(i => i !== input)
     onInputChange(newInputs)
   }
 
@@ -77,8 +86,8 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
   }
 
   const handleSaveEdit = () => {
-    if (editingField && editValue && !workflow.input_schema.includes(editValue)) {
-      const newInputs = workflow.input_schema.map(i => 
+    if (editingField && editValue && !inputSchema.includes(editValue)) {
+      const newInputs = inputSchema.map(i => 
         i === editingField ? editValue : i
       )
       onInputChange(newInputs)
@@ -88,7 +97,7 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
         title: "Success",
         description: "Field name updated",
       })
-    } else if (workflow.input_schema.includes(editValue)) {
+    } else if (inputSchema.includes(editValue)) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -111,10 +120,8 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
         // Update the input schema first
         onInputChange(keys)
         
-        // Then store the raw input data with proper formatting
-        const formattedValue = JSON.stringify(jsonData, null, 2)
-        console.log('Storing formatted input data:', formattedValue)
-        onInputDataChange(formattedValue)
+        // Then store the raw input data
+        onInputDataChange(value)
         
         // Show success toast
         toast({
@@ -141,9 +148,9 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
             headers.forEach((header, index) => {
               jsonData[header.trim()] = values[index]?.trim() || ''
             })
-            const formattedValue = JSON.stringify(jsonData, null, 2)
-            console.log('Converted CSV to JSON:', formattedValue)
-            onInputDataChange(formattedValue)
+            
+            // Store the raw input data
+            onInputDataChange(JSON.stringify(jsonData))
             
             // Show success toast
             toast({
@@ -274,7 +281,12 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
         </TabsContent>
 
         <TabsContent value="api">
-          <ApiSection workflow={workflow} />
+          <ApiSection 
+            workflow={{ 
+              id: workflow.id, 
+              version: workflow.version 
+            }} 
+          />
         </TabsContent>
       </Tabs>
 
@@ -282,7 +294,7 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
         <h4 className="text-sm font-medium">Input Schema</h4>
 
         <div className="space-y-2">
-          {workflow.input_schema.map((input, index) => (
+          {inputSchema.map((input, index) => (
             <div
               key={input}
               className="flex items-center gap-2 p-2 bg-muted rounded-md group"
@@ -292,15 +304,15 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
                 className="h-8 bg-transparent border-0 p-0 focus-visible:ring-1 focus-visible:ring-offset-0"
                 onBlur={(e) => {
                   const newValue = e.target.value.trim()
-                  if (newValue && newValue !== input && !workflow.input_schema.includes(newValue)) {
-                    const newInputs = [...workflow.input_schema]
+                  if (newValue && newValue !== input && !inputSchema.includes(newValue)) {
+                    const newInputs = [...inputSchema]
                     newInputs[index] = newValue
                     onInputChange(newInputs)
                     toast({
                       title: "Success",
                       description: "Field name updated",
                     })
-                  } else if (workflow.input_schema.includes(newValue) && newValue !== input) {
+                  } else if (inputSchema.includes(newValue) && newValue !== input) {
                     e.target.value = input
                     toast({
                       variant: "destructive",

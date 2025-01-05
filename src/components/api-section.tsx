@@ -11,24 +11,54 @@ import { Copy, Check } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface ApiSectionProps {
-  workflow: Workflow
+  workflow: Pick<Workflow, 'id'> & {
+    version?: number | null;
+  };
+  onVersionChange?: (version: string | null) => void;
 }
 
-export default function ApiSection({ workflow }: ApiSectionProps) {
+export default function ApiSection({ workflow, onVersionChange }: ApiSectionProps) {
   const { toast } = useToast()
   const [inputData, setInputData] = useState('')
   const [inputId, setInputId] = useState('')
   const [manualInputId, setManualInputId] = useState('')
+  const [version, setVersion] = useState(() => workflow.version?.toString() || '')
   const [output, setOutput] = useState('')
   const [error, setError] = useState('')
   const [hasCopied, setHasCopied] = useState<string | null>(null)
+
+  // Update version when workflow version changes
+  useEffect(() => {
+    setVersion(workflow.version?.toString() || '')
+  }, [workflow.version])
+
+  // Update manual input ID when input ID changes
+  useEffect(() => {
+    if (inputId) {
+      setManualInputId(inputId)
+    }
+  }, [inputId])
+
+  // Notify parent component of version changes
+  useEffect(() => {
+    onVersionChange?.(version || null)
+  }, [version, onVersionChange])
 
   const baseUrl = typeof window !== 'undefined' 
     ? `${window.location.protocol}//${window.location.host}`
     : ''
 
-  const inputEndpoint = `${baseUrl}/api/workflow/${workflow.id}/input`
-  const getOutputEndpoint = (id: string) => `${baseUrl}/api/workflow/${workflow.id}/output?input_id=${id}`
+  const getInputEndpoint = () => {
+    const base = `${baseUrl}/api/workflow/${workflow.id}/input`
+    const versionToUse = version || workflow.version?.toString()
+    return versionToUse ? `${base}?version=${versionToUse}` : base
+  }
+
+  const getOutputEndpoint = (id: string) => {
+    const base = `${baseUrl}/api/workflow/${workflow.id}/output?input_id=${id}`
+    const versionToUse = version || workflow.version?.toString()
+    return versionToUse ? `${base}&version=${versionToUse}` : base
+  }
 
   async function copyToClipboard(text: string, key: string) {
     await navigator.clipboard.writeText(text)
@@ -45,7 +75,7 @@ export default function ApiSection({ workflow }: ApiSectionProps) {
       setError('')
       const parsedData = JSON.parse(inputData)
       
-      const response = await fetch(inputEndpoint, {
+      const response = await fetch(getInputEndpoint(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -142,7 +172,7 @@ export default function ApiSection({ workflow }: ApiSectionProps) {
         <div className="space-y-2">
           <Label>Input API</Label>
           <CodeBlock 
-            code={`${inputEndpoint}`}
+            code={getInputEndpoint()}
             id="input-api"
           />
         </div>
@@ -189,6 +219,27 @@ export default function ApiSection({ workflow }: ApiSectionProps) {
             placeholder="Enter an existing input ID to test"
             className="font-mono"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Version (Optional)</Label>
+          <div className="flex gap-2">
+            <Input
+              value={version}
+              onChange={(e) => setVersion(e.target.value)}
+              placeholder="Enter a workflow version number"
+              className="font-mono"
+              type="number"
+            />
+            {version && version !== workflow.version?.toString() && (
+              <Button
+                variant="outline"
+                onClick={() => setVersion(workflow.version?.toString() || '')}
+              >
+                Reset to Current
+              </Button>
+            )}
+          </div>
         </div>
 
         <Button 

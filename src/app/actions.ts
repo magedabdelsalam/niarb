@@ -1,275 +1,253 @@
 'use server'
 
+import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@supabase/supabase-js'
-import type { Workflow, WorkflowVersion } from '@/types/workflow'
-
-// Create a single supabase client for interacting with your database
-function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-}
-
-export async function createWorkflow(workflow: Omit<Workflow, 'id'>) {
-  const supabase = getSupabaseClient()
-  
-  // Ensure input_data is a string
-  const input_data = typeof workflow.input_data === 'string' 
-    ? workflow.input_data 
-    : JSON.stringify(workflow.input_data)
-
-  // Create a new object without ai_model
-  const { ai_model, ...workflowData } = workflow
-
-  const { data, error } = await supabase
-    .from('workflows')
-    .insert([{
-      ...workflowData,
-      input_data,
-      status: 'draft',
-      version: 1,
-      created_by: null,
-      ai_models: ai_model // Add ai_models separately
-    }])
-    .select()
-    .single()
-
-  if (error) throw new Error(error.message)
-  
-  revalidatePath('/')
-  return data as Workflow
-}
-
-export async function updateWorkflow(id: string, workflow: Partial<Workflow>, isDraft: boolean = true) {
-  const supabase = getSupabaseClient()
-  
-  try {
-    // First get the current workflow to ensure it exists
-    const { data: existingWorkflow, error: getError } = await supabase
-      .from('workflows')
-      .select()
-      .eq('id', id)
-      .single()
-
-    if (getError) throw new Error(getError.message)
-    if (!existingWorkflow) throw new Error('Workflow not found')
-
-    // Ensure input_data is a string
-    const input_data = typeof workflow.input_data === 'string' 
-      ? workflow.input_data 
-      : JSON.stringify(workflow.input_data)
-
-    // Create update data without ai_model
-    const { ai_model, ...updateData } = workflow
-
-    // Update with the new data
-    const { data, error } = await supabase
-      .from('workflows')
-      .update({
-        ...updateData,
-        input_data,
-        ai_models: ai_model, // Add ai_models separately
-        // Set the draft flag and keep current version for draft saves
-        is_saving_draft: isDraft,
-        ...(isDraft ? { version: existingWorkflow.version } : {})
-      })
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (error) throw new Error(error.message)
-    
-    revalidatePath('/')
-    return data as Workflow
-  } catch (error: any) {
-    console.error('Error updating workflow:', error)
-    throw new Error(error.message || 'Failed to update workflow')
-  }
-}
+import { Workflow } from '@/types/workflow'
 
 export async function getWorkflow(id: string) {
-  const supabase = getSupabaseClient()
-  
-  const { data, error } = await supabase
+  const supabase = createClient()
+  const { data: workflow, error } = await supabase
     .from('workflows')
-    .select()
+    .select('*')
     .eq('id', id)
     .single()
 
-  if (error) throw new Error(error.message)
-  return data as Workflow
+  if (error) {
+    console.error('Error fetching workflow:', error)
+    throw error
+  }
+
+  // Parse input_data if it's a string
+  if (workflow.input_data && typeof workflow.input_data === 'string') {
+    try {
+      workflow.input_data = JSON.parse(workflow.input_data)
+    } catch (e) {
+      console.error('Error parsing input_data:', e)
+      // If parsing fails, return the original string
+      workflow.input_data = workflow.input_data
+    }
+  }
+
+  return workflow
 }
 
 export async function getWorkflows() {
-  const supabase = getSupabaseClient()
-  
+  const supabase = createClient()
   const { data, error } = await supabase
     .from('workflows')
-    .select()
+    .select('*')
     .order('created_at', { ascending: false })
 
-  if (error) throw new Error(error.message)
-  return data as Workflow[]
+  if (error) {
+    console.error('Error fetching workflows:', error)
+    throw error
+  }
+
+  return data
 }
 
-export async function deleteWorkflow(id: string) {
-  const supabase = getSupabaseClient()
-  
-  const { error } = await supabase
-    .from('workflows')
-    .delete()
-    .eq('id', id)
-
-  if (error) throw new Error(error.message)
-  
-  revalidatePath('/')
-}
-
-export async function getWorkflowVersions(workflowId: string) {
-  const supabase = getSupabaseClient()
-  
+export async function createWorkflow(workflow: Partial<Workflow>) {
+  const supabase = createClient()
   const { data, error } = await supabase
-    .from('workflow_versions')
+    .from('workflows')
+    .insert(workflow)
     .select()
-    .eq('workflow_id', workflowId)
-    .order('version', { ascending: false })
+    .single()
 
-  if (error) throw new Error(error.message)
-  return data as WorkflowVersion[]
+  if (error) {
+    console.error('Error creating workflow:', error)
+    throw error
+  }
+
+  revalidatePath('/')
+  return data
 }
 
-export async function restoreWorkflowVersion(workflowId: string, version: WorkflowVersion) {
-  const supabase = getSupabaseClient()
-  
-  const { error: updateError } = await supabase
+export async function updateWorkflow(id: string, workflow: Partial<Workflow>) {
+  const supabase = createClient()
+
+  // Parse input_data if it's a string
+  let parsedInputData = workflow.input_data
+  if (typeof workflow.input_data === 'string') {
+    try {
+      parsedInputData = JSON.parse(workflow.input_data)
+    } catch (e) {
+      console.error('Error parsing input_data:', e)
+      parsedInputData = workflow.input_data
+    }
+  }
+
+  // Update the workflow directly without affecting version
+  const { error: workflowError } = await supabase
     .from('workflows')
     .update({
-      ...version.data
+      name: workflow.name,
+      input_schema: workflow.input_schema,
+      input_data: parsedInputData,
+      logic_blocks: workflow.logic_blocks,
+      calculations: workflow.calculations,
+      output_schema: workflow.output_schema
     })
-    .eq('id', workflowId)
-
-  if (updateError) throw new Error(updateError.message)
-  
-  revalidatePath('/')
-}
-
-export async function publishWorkflow(id: string) {
-  const supabase = getSupabaseClient()
-  const { error } = await supabase
-    .from('workflows')
-    .update({ status: 'published' })
     .eq('id', id)
 
-  if (error) throw new Error(error.message)
-  
-  revalidatePath('/')
-}
-
-export async function unpublishWorkflow(id: string) {
-  const supabase = getSupabaseClient()
-  const { error } = await supabase
-    .from('workflows')
-    .update({ status: 'draft' })
-    .eq('id', id)
-
-  if (error) throw new Error(error.message)
-  
-  revalidatePath('/')
-}
-
-export async function publishWorkflowVersion(id: string, workflow: Partial<Workflow>, comment?: string) {
-  const supabase = getSupabaseClient()
-  
-  try {
-    // First get the current workflow to ensure it exists
-    const { data: existingWorkflow, error: getError } = await supabase
-      .from('workflows')
-      .select()
-      .eq('id', id)
-      .single()
-
-    if (getError) throw new Error(getError.message)
-    if (!existingWorkflow) throw new Error('Workflow not found')
-
-    // Ensure input_data is a string
-    const input_data = typeof workflow.input_data === 'string' 
-      ? workflow.input_data 
-      : JSON.stringify(workflow.input_data)
-
-    // Create update data without ai_model
-    const { ai_model, ...updateData } = workflow
-
-    // Update the workflow with versioning enabled (will create a new version)
-    const { data, error } = await supabase
-      .from('workflows')
-      .update({
-        ...updateData,
-        input_data,
-        ai_models: ai_model, // Add ai_models separately
-        status: 'published'
-      })
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (error) throw new Error(error.message)
-
-    // If a comment was provided, update the version comment
-    if (comment) {
-      const { error: versionError } = await supabase
-        .from('workflow_versions')
-        .update({ comment })
-        .eq('workflow_id', id)
-        .eq('version', existingWorkflow.version)
-
-      if (versionError) throw new Error(versionError.message)
-    }
-    
-    revalidatePath('/')
-    return data as Workflow
-  } catch (error: any) {
-    console.error('Error publishing workflow:', error)
-    throw new Error(error.message || 'Failed to publish workflow')
+  if (workflowError) {
+    console.error('Error updating workflow:', workflowError)
+    throw workflowError
   }
+
+  revalidatePath('/')
+}
+
+export async function publishWorkflowVersion(id: string, workflow: Partial<Workflow>) {
+  const supabase = createClient()
+
+  // First get the current version number
+  const { data: currentWorkflow, error: currentError } = await supabase
+    .from('workflows')
+    .select('version')
+    .eq('id', id)
+    .single()
+
+  if (currentError) {
+    console.error('Error fetching current workflow:', currentError)
+    throw currentError
+  }
+
+  const newVersion = (currentWorkflow?.version || 0) + 1
+
+  // Parse input_data if it's a string
+  let parsedInputData = workflow.input_data
+  if (typeof workflow.input_data === 'string') {
+    try {
+      parsedInputData = JSON.parse(workflow.input_data)
+    } catch (e) {
+      console.error('Error parsing input_data:', e)
+      parsedInputData = workflow.input_data
+    }
+  }
+
+  // Create a clean version of the workflow data
+  const versionData = {
+    name: workflow.name,
+    input_schema: workflow.input_schema,
+    input_data: parsedInputData,
+    logic_blocks: workflow.logic_blocks,
+    calculations: workflow.calculations,
+    output_schema: workflow.output_schema
+  }
+
+  // Create a new version
+  const { error: versionError } = await supabase
+    .from('workflow_versions')
+    .insert({
+      workflow_id: id,
+      version: newVersion,
+      data: versionData // Store the entire workflow data as a clean JSON object
+    })
+
+  if (versionError) {
+    console.error('Error creating version:', versionError)
+    throw versionError
+  }
+
+  // Update the current workflow with the new version number
+  const { error } = await supabase
+    .from('workflows')
+    .update({
+      version: newVersion
+    })
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error updating workflow version:', error)
+    throw error
+  }
+
+  revalidatePath('/')
 }
 
 export async function makeLatestVersion(id: string, version: number) {
-  const supabase = getSupabaseClient()
+  const supabase = createClient()
   
+  // First get the version data
+  const { data: versionData, error: versionError } = await supabase
+    .from('workflow_versions')
+    .select('*')
+    .eq('workflow_id', id)
+    .eq('version', version)
+    .single()
+
+  if (versionError) {
+    console.error('Error fetching version:', versionError)
+    throw versionError
+  }
+
+  if (!versionData) {
+    throw new Error('Version not found')
+  }
+
+  // Update the workflow with the version data
+  const { error: updateError } = await supabase
+    .from('workflows')
+    .update({
+      name: versionData.name,
+      input_schema: versionData.input_schema,
+      input_data: versionData.input_data,
+      logic_blocks: versionData.logic_blocks,
+      calculations: versionData.calculations,
+      output_schema: versionData.output_schema,
+      version: versionData.version
+    })
+    .eq('id', id)
+
+  if (updateError) {
+    console.error('Error updating workflow:', updateError)
+    throw updateError
+  }
+
+  revalidatePath('/')
+}
+
+export async function deleteWorkflow(id: string) {
+  const supabase = createClient()
+
   try {
-    // First get the workflow and version data
-    const { data: versionData, error: versionError } = await supabase
+    // First delete all workflow versions
+    const { error: versionsError } = await supabase
       .from('workflow_versions')
-      .select('data')
+      .delete()
       .eq('workflow_id', id)
-      .eq('version', version)
-      .single()
 
-    if (versionError) throw new Error(versionError.message)
-    if (!versionData) throw new Error('Version not found')
+    if (versionsError) {
+      console.error('Error deleting workflow versions:', versionsError)
+      throw versionsError
+    }
 
-    // Update the current workflow with the version data
-    const { error: updateError } = await supabase
+    // Then delete all workflow inputs
+    const { error: inputsError } = await supabase
+      .from('workflow_inputs')
+      .delete()
+      .eq('workflow_id', id)
+
+    if (inputsError) {
+      console.error('Error deleting workflow inputs:', inputsError)
+      throw inputsError
+    }
+
+    // Finally delete the workflow itself
+    const { error: workflowError } = await supabase
       .from('workflows')
-      .update({
-        ...versionData.data,
-        is_saving_draft: true, // Prevent creating a new version
-      })
+      .delete()
       .eq('id', id)
 
-    if (updateError) throw new Error(updateError.message)
-    
+    if (workflowError) {
+      console.error('Error deleting workflow:', workflowError)
+      throw workflowError
+    }
+
     revalidatePath('/')
-  } catch (error: any) {
-    console.error('Error making version latest:', error)
-    throw new Error(error.message || 'Failed to make version latest')
+  } catch (error) {
+    console.error('Error in deleteWorkflow:', error)
+    throw error
   }
 } 

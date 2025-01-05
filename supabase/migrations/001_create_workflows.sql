@@ -1,150 +1,111 @@
--- Enable the pgvector extension for potential AI features
-create extension if not exists "uuid-ossp";
-
--- Create enum for workflow status
-create type workflow_status as enum ('draft', 'published');
-
--- Create workflows table
-create table workflows (
-  id uuid primary key default uuid_generate_v4(),
-  name text not null,
-  input_data text default '',
-  input_schema jsonb default '[]'::jsonb,
-  logic_blocks jsonb default '[]'::jsonb,
-  calculations jsonb default '[]'::jsonb,
-  output_schema jsonb default '{}'::jsonb,
-  ai_model jsonb default null,
-  status workflow_status default 'draft',
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  created_by uuid references auth.users(id),
-  version integer default 1,
-  is_saving_draft boolean default false
+CREATE TABLE public.workflow_inputs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  workflow_id uuid NULL,
+  input_data jsonb NOT NULL,
+  output_data jsonb NULL,
+  logic_data jsonb NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  workflow_version integer NULL,
+  CONSTRAINT workflow_inputs_pkey PRIMARY KEY (id),
+  CONSTRAINT workflow_inputs_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
 
--- Create versions table for workflow versioning
-create table workflow_versions (
-  id uuid primary key default uuid_generate_v4(),
-  workflow_id uuid references workflows(id) on delete cascade,
-  version integer not null,
-  data jsonb not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  created_by uuid references auth.users(id),
-  comment text
+CREATE TABLE public.workflow_versions (
+  id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  workflow_id uuid NOT NULL,
+  version integer NOT NULL,
+  data jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT workflow_versions_pkey PRIMARY KEY (id),
+  CONSTRAINT workflow_versions_workflow_id_fkey FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS workflow_versions_workflow_id_idx ON public.workflow_versions USING btree (workflow_id);
 
--- Create index for faster queries
-create index workflows_created_by_idx on workflows(created_by);
-create index workflows_status_idx on workflows(status);
-create index workflow_versions_workflow_id_idx on workflow_versions(workflow_id);
+CREATE TABLE public.workflows (
+  id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
+  name text NOT NULL,
+  input_data jsonb NULL DEFAULT '{}'::jsonb,
+  input_schema jsonb NULL DEFAULT '[]'::jsonb,
+  logic_blocks jsonb NULL DEFAULT '[]'::jsonb,
+  calculations jsonb NULL DEFAULT '[]'::jsonb,
+  output_schema jsonb NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  created_by uuid NULL,
+  version integer NULL DEFAULT 1,
+  description text NULL DEFAULT ''::text,
+  CONSTRAINT workflows_pkey PRIMARY KEY (id),
+  CONSTRAINT workflows_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)
+);
+CREATE INDEX IF NOT EXISTS workflows_created_by_idx ON public.workflows USING btree (created_by);
 
--- Create function to update updated_at timestamp
-create or replace function update_updated_at_column()
-returns trigger as $$
-begin
-  new.updated_at = timezone('utc'::text, now());
-  return new;
-end;
-$$ language plpgsql;
+-- Row Level Security Policies
+CREATE POLICY "Users can delete their own workflows" ON public.workflows FOR DELETE TO authenticated USING ((select auth.uid()) = created_by);
+CREATE POLICY "Users can update their own workflows" ON public.workflows FOR UPDATE TO authenticated USING ((select auth.uid()) = created_by) WITH CHECK ((select auth.uid()) = created_by);
+CREATE POLICY "Users can create workflows" ON public.workflows FOR INSERT TO authenticated WITH CHECK ((select auth.uid()) = created_by);
+CREATE POLICY "Users can view their own workflows" ON public.workflows FOR SELECT TO authenticated USING ((select auth.uid()) = created_by);
 
--- Create trigger to automatically update updated_at
-create trigger update_workflows_updated_at
-  before update on workflows
-  for each row
-  execute function update_updated_at_column();
+-- Functions
+CREATE OR REPLACE FUNCTION public.handle_workflow_version() RETURNS trigger AS $$
+DECLARE
+  version_number integer;
+BEGIN
+  -- Get the next version number
+  SELECT COALESCE(MAX(version), 0) + 1 INTO version_number
+  FROM workflow_versions
+  WHERE workflow_id = NEW.id;
 
--- Create function to store workflow version
-create or replace function store_workflow_version()
-returns trigger as $$
-declare
-  version_data jsonb;
-begin
-  -- Skip versioning if this is a draft save
-  if new.is_saving_draft then
-    -- Reset the flag
-    new.is_saving_draft = false;
-    return new;
-  end if;
+  -- Insert the new version
+  INSERT INTO workflow_versions (
+    workflow_id,
+    version,
+    data
+  )
+  VALUES (
+    NEW.id,
+    version_number,
+    jsonb_build_object(
+      'name', NEW.name,
+      'input_schema', NEW.input_schema,
+      'input_data', NEW.input_data,
+      'logic_blocks', NEW.logic_blocks,
+      'calculations', NEW.calculations,
+      'output_schema', NEW.output_schema
+    )
+  );
 
-  if (tg_op = 'UPDATE') then
-    -- Build version data object with null checks
-    version_data = jsonb_build_object(
-      'name', old.name,
-      'input_data', coalesce(old.input_data, ''),
-      'input_schema', coalesce(old.input_schema, '[]'::jsonb),
-      'logic_blocks', coalesce(old.logic_blocks, '[]'::jsonb),
-      'calculations', coalesce(old.calculations, '[]'::jsonb),
-      'output_schema', coalesce(old.output_schema, '{}'::jsonb),
-      'status', old.status
-    );
+  -- Set the version number in the new record
+  NEW.version = version_number;
 
-    -- Add ai_model only if it exists
-    if (select true from information_schema.columns 
-        where table_name = 'workflows' 
-        and column_name = 'ai_model') then
-      version_data = version_data || 
-        jsonb_build_object('ai_model', coalesce(old.ai_model, 'null'::jsonb));
-    end if;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-    -- Store the previous version
-    insert into workflow_versions (
-      workflow_id,
-      version,
-      data,
-      created_by
-    ) values (
-      old.id,
-      old.version,
-      version_data,
-      old.created_by
-    );
-    -- Increment version number
-    new.version = old.version + 1;
-  end if;
-  return new;
-end;
-$$ language plpgsql;
+CREATE OR REPLACE FUNCTION public.try_parse_json(text) RETURNS jsonb AS $$
+BEGIN
+  RETURN $1::jsonb;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
 
--- Create trigger to automatically store versions
-create trigger store_workflow_version_trigger
-  before update on workflows
-  for each row
-  execute function store_workflow_version();
+CREATE OR REPLACE FUNCTION public.update_updated_at_column() RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = timezone('utc'::text, now());
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- Temporarily disable RLS for development
-alter table workflows disable row level security;
-alter table workflow_versions disable row level security;
+-- Create trigger for updated_at
+CREATE TRIGGER update_workflows_updated_at
+    BEFORE UPDATE ON workflows
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
--- Create policies for workflows
-create policy "Users can view their own workflows"
-  on workflows for select
-  using (auth.uid() = created_by);
-
-create policy "Users can create workflows"
-  on workflows for insert
-  with check (auth.uid() = created_by);
-
-create policy "Users can update their own workflows"
-  on workflows for update
-  using (auth.uid() = created_by);
-
-create policy "Users can delete their own workflows"
-  on workflows for delete
-  using (auth.uid() = created_by);
-
--- Create policies for workflow versions
-create policy "Users can view versions of their workflows"
-  on workflow_versions for select
-  using (exists (
-    select 1 from workflows
-    where workflows.id = workflow_versions.workflow_id
-    and workflows.created_by = auth.uid()
-  ));
-
--- Remove the old enable/disable functions since we're not using them anymore
-drop function if exists disable_workflow_versioning();
-drop function if exists enable_workflow_versioning();
-
--- Grant execute permissions on the functions
-grant execute on function disable_workflow_versioning to authenticated;
-grant execute on function enable_workflow_versioning to authenticated; 
+-- Create trigger for versioning
+CREATE TRIGGER workflow_version_trigger
+AFTER UPDATE OF version ON workflows
+FOR EACH ROW
+WHEN (OLD.version IS DISTINCT FROM NEW.version)
+EXECUTE FUNCTION handle_workflow_version();

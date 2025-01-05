@@ -57,18 +57,26 @@ export async function GET(
       .single()
 
     if (versionError || !versionData) {
-      console.error('Error fetching workflow version:', versionError)
+      console.error('Error fetching version:', versionError)
       return NextResponse.json(
-        { error: 'Workflow version not found' },
+        { error: 'Version not found' },
         { status: 404 }
       )
     }
 
-    // Return the version data with the version number
+    // Parse the data field which contains the full workflow data
+    const workflowData = versionData.data as any
+
+    // Return the workflow data with the correct structure
     return NextResponse.json({
       workflow: {
-        ...versionData.data,
         id,
+        name: workflowData.name,
+        input_schema: workflowData.input_schema,
+        input_data: typeof workflowData.input_data === 'string' ? JSON.parse(workflowData.input_data) : workflowData.input_data,
+        logic_blocks: workflowData.logic_blocks,
+        calculations: workflowData.calculations,
+        output_schema: workflowData.output_schema,
         version: parseInt(version)
       }
     })
