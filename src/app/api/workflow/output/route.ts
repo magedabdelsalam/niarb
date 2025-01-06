@@ -21,152 +21,161 @@ function processWorkflow(workflow: Workflow, inputData: any) {
       parsedInput = inputData
     }
 
-    // Process logic blocks
+    // Process all logic blocks first
     workflow.logic_blocks?.forEach((block: LogicBlock) => {
       if (!block.output_name) return
 
       // Evaluate primary condition using nested value access
       const inputValue = getNestedValue(parsedInput, block.input_name)
       if (inputValue === undefined) {
+        data[block.output_name] = block.default_value || ""
         return
       }
 
       let primaryResult = false
-      switch (block.operation) {
-        case 'equal':
-          const normalizedInput = typeof inputValue === 'object' ? JSON.stringify(inputValue) : String(inputValue)
-          const normalizedValue = typeof block.values?.[0] === 'object' ? JSON.stringify(block.values[0]) : String(block.values?.[0] || '')
-          primaryResult = normalizedInput === normalizedValue
-          break
-        case 'neq':
-          const neqInput = typeof inputValue === 'object' ? JSON.stringify(inputValue) : String(inputValue)
-          const neqValue = typeof block.values?.[0] === 'object' ? JSON.stringify(block.values[0]) : String(block.values?.[0] || '')
-          primaryResult = neqInput !== neqValue
-          break
-        case 'gt':
-          primaryResult = Number(inputValue) > Number(block.values?.[0] || 0)
-          break
-        case 'gte':
-          primaryResult = Number(inputValue) >= Number(block.values?.[0] || 0)
-          break
-        case 'lt':
-          primaryResult = Number(inputValue) < Number(block.values?.[0] || 0)
-          break
-        case 'lte':
-          primaryResult = Number(inputValue) <= Number(block.values?.[0] || 0)
-          break
-        case 'in':
-          const listValue = block.values?.[0]
-          const list = typeof listValue === 'string' ? listValue.split(',').map((v: string) => v.trim()) : []
-          primaryResult = list.includes(String(inputValue))
-          break
-        case 'is':
-          const isNull = block.values?.[0] === 'null'
-          primaryResult = isNull ? inputValue === null : inputValue !== null
-          break
-        case 'between':
-          const value = Number(inputValue)
-          const min = Number(block.values?.[0] || 0)
-          const max = Number(block.values?.[1] || 0)
-          primaryResult = value >= min && value <= max
-          break
-      }
-
-      // Evaluate additional conditions
-      let finalResult = primaryResult
-      block.conditions?.forEach((condition: Condition) => {
-        // Use nested value access for conditions too
-        const conditionValue = getNestedValue(parsedInput, condition.input_name)
-        if (conditionValue === undefined) {
-          return
-        }
-
-        let conditionResult = false
-        switch (condition.operation) {
+      try {
+        switch (block.operation) {
           case 'equal':
-            const normalizedCondInput = typeof conditionValue === 'object' ? JSON.stringify(conditionValue) : String(conditionValue)
-            const normalizedCondValue = typeof condition.values?.[0] === 'object' ? JSON.stringify(condition.values[0]) : String(condition.values?.[0] || '')
-            conditionResult = normalizedCondInput === normalizedCondValue
+            const normalizedInput = typeof inputValue === 'object' ? JSON.stringify(inputValue) : String(inputValue)
+            const normalizedValue = typeof block.values?.[0] === 'object' ? JSON.stringify(block.values[0]) : String(block.values?.[0] || '')
+            primaryResult = normalizedInput === normalizedValue
             break
           case 'neq':
-            const neqCondInput = typeof conditionValue === 'object' ? JSON.stringify(conditionValue) : String(conditionValue)
-            const neqCondValue = typeof condition.values?.[0] === 'object' ? JSON.stringify(condition.values[0]) : String(condition.values?.[0] || '')
-            conditionResult = neqCondInput !== neqCondValue
+            const neqInput = typeof inputValue === 'object' ? JSON.stringify(inputValue) : String(inputValue)
+            const neqValue = typeof block.values?.[0] === 'object' ? JSON.stringify(block.values[0]) : String(block.values?.[0] || '')
+            primaryResult = neqInput !== neqValue
             break
           case 'gt':
-            conditionResult = Number(conditionValue) > Number(condition.values?.[0] || 0)
+            primaryResult = Number(inputValue) > Number(block.values?.[0] || 0)
             break
           case 'gte':
-            conditionResult = Number(conditionValue) >= Number(condition.values?.[0] || 0)
+            primaryResult = Number(inputValue) >= Number(block.values?.[0] || 0)
             break
           case 'lt':
-            conditionResult = Number(conditionValue) < Number(condition.values?.[0] || 0)
+            primaryResult = Number(inputValue) < Number(block.values?.[0] || 0)
             break
           case 'lte':
-            conditionResult = Number(conditionValue) <= Number(condition.values?.[0] || 0)
+            primaryResult = Number(inputValue) <= Number(block.values?.[0] || 0)
             break
           case 'in':
-            const listValue = condition.values?.[0]
+            const listValue = block.values?.[0]
             const list = typeof listValue === 'string' ? listValue.split(',').map((v: string) => v.trim()) : []
-            conditionResult = list.includes(String(conditionValue))
+            primaryResult = list.includes(String(inputValue))
             break
           case 'is':
-            const isNull = condition.values?.[0] === 'null'
-            conditionResult = isNull ? conditionValue === null : conditionValue !== null
+            const isNull = block.values?.[0] === 'null'
+            primaryResult = isNull ? inputValue === null : inputValue !== null
             break
           case 'between':
-            const value = Number(conditionValue)
-            const min = Number(condition.values?.[0] || 0)
-            const max = Number(condition.values?.[1] || 0)
-            conditionResult = value >= min && value <= max
+            const value = Number(inputValue)
+            const min = Number(block.values?.[0] || 0)
+            const max = Number(block.values?.[1] || 0)
+            primaryResult = value >= min && value <= max
             break
         }
 
-        // Apply AND/OR operator
-        if (condition.operator === 'and') {
-          finalResult = finalResult && conditionResult
-        } else {
-          finalResult = finalResult || conditionResult
-        }
-      })
+        // Evaluate additional conditions
+        let finalResult = primaryResult
+        block.conditions?.forEach((condition: Condition) => {
+          // Use nested value access for conditions too
+          const conditionValue = getNestedValue(parsedInput, condition.input_name)
+          if (conditionValue === undefined) {
+            return
+          }
 
-      data[block.output_name] = finalResult ? block.output_value : (block.default_value || "")
+          let conditionResult = false
+          switch (condition.operation) {
+            case 'equal':
+              const normalizedCondInput = typeof conditionValue === 'object' ? JSON.stringify(conditionValue) : String(conditionValue)
+              const normalizedCondValue = typeof condition.values?.[0] === 'object' ? JSON.stringify(condition.values[0]) : String(condition.values?.[0] || '')
+              conditionResult = normalizedCondInput === normalizedCondValue
+              break
+            case 'neq':
+              const neqCondInput = typeof conditionValue === 'object' ? JSON.stringify(conditionValue) : String(conditionValue)
+              const neqCondValue = typeof condition.values?.[0] === 'object' ? JSON.stringify(condition.values[0]) : String(condition.values?.[0] || '')
+              conditionResult = neqCondInput !== neqCondValue
+              break
+            case 'gt':
+              conditionResult = Number(conditionValue) > Number(condition.values?.[0] || 0)
+              break
+            case 'gte':
+              conditionResult = Number(conditionValue) >= Number(condition.values?.[0] || 0)
+              break
+            case 'lt':
+              conditionResult = Number(conditionValue) < Number(condition.values?.[0] || 0)
+              break
+            case 'lte':
+              conditionResult = Number(conditionValue) <= Number(condition.values?.[0] || 0)
+              break
+            case 'in':
+              const listValue = condition.values?.[0]
+              const list = typeof listValue === 'string' ? listValue.split(',').map((v: string) => v.trim()) : []
+              conditionResult = list.includes(String(conditionValue))
+              break
+            case 'is':
+              const isNull = condition.values?.[0] === 'null'
+              conditionResult = isNull ? conditionValue === null : conditionValue !== null
+              break
+            case 'between':
+              const value = Number(conditionValue)
+              const min = Number(condition.values?.[0] || 0)
+              const max = Number(condition.values?.[1] || 0)
+              conditionResult = value >= min && value <= max
+              break
+          }
+
+          // Apply AND/OR operator
+          if (condition.operator === 'and') {
+            finalResult = finalResult && conditionResult
+          } else {
+            finalResult = finalResult || conditionResult
+          }
+        })
+
+        data[block.output_name] = finalResult ? block.output_value : (block.default_value || "")
+      } catch (error) {
+        console.error(`Error processing logic block ${block.output_name}:`, error)
+        data[block.output_name] = block.default_value || ""
+      }
     })
 
-    // Process calculations
+    // Create context with all logic block results
+    const context = { ...parsedInput, ...data }
+
+    // Process calculations in order, updating context after each one
     workflow.calculations?.forEach((calc: Calculation) => {
       if (!calc.output_name) return
 
       try {
-        // Create a context with input data
-        const context = { ...parsedInput }
-        // Add logic block results
-        workflow.logic_blocks?.forEach((block: LogicBlock) => {
-          if (block.output_name) {
-            context[block.output_name] = data[block.output_name]
-          }
-        })
-        
-        // Evaluate formula with context, supporting nested paths
+        // Evaluate formula with current context
         const formula = calc.formula.replace(/\${([\w.]+)}/g, (_: string, key: string) => {
           const value = getNestedValue(context, key)
           if (value === undefined) {
-            throw new Error(`Variable ${key} not found in context`)
+            console.warn(`Variable ${key} not found in context, using 0`)
+            return "0"
           }
           return typeof value === 'string' ? `"${value}"` : value
         })
         
         const result = new Function(`return ${formula}`)()
         data[calc.output_name] = result
+        // Add the result to context for next calculations
+        context[calc.output_name] = result
       } catch (error) {
         console.error('Error processing calculation:', error)
+        data[calc.output_name] = 0
+        context[calc.output_name] = 0
       }
     })
 
-    // Filter by output schema
-    return Object.fromEntries(
-      Object.entries(data).filter(([key]) => workflow.output_schema?.[key] === true)
-    )
+    // Filter by output schema if it exists
+    if (workflow.output_schema && Object.keys(workflow.output_schema).length > 0) {
+      return Object.fromEntries(
+        Object.entries(data).filter(([key]) => workflow.output_schema?.[key] === true)
+      )
+    }
+
+    return data
   } catch (error) {
     console.error('Error processing workflow:', error)
     throw error
@@ -242,6 +251,28 @@ export async function GET(request: Request) {
     console.error('Error processing output:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const { input_data, logic_blocks, calculations, output_schema } = await request.json()
+
+    // Process the workflow directly
+    const output = processWorkflow({
+      input_data,
+      logic_blocks,
+      calculations,
+      output_schema
+    } as Workflow, input_data)
+
+    return NextResponse.json({ output })
+  } catch (error) {
+    console.error('Error processing output:', error)
+    return NextResponse.json(
+      { error: 'Failed to process output' },
       { status: 500 }
     )
   }

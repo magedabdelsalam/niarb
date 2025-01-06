@@ -7,6 +7,7 @@ import { type OutputData, type WorkflowOutput, type Workflow, type LogicBlock, t
 import { useEffect, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertCircle } from "lucide-react"
+import { processWorkflow } from '@/lib/workflow'
 
 interface OutputSectionProps {
   workflowId?: string;
@@ -523,7 +524,11 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
             context[block.output_name] = data[block.output_name]
           }
         })
-
+        // Add previous calculation results
+        Object.entries(data).forEach(([key, value]) => {
+          context[key] = value
+        })
+        
         // Get the raw formula and ensure it's a string
         const rawFormula = typeof calc.formula === 'string' ? 
           calc.formula : 
@@ -539,12 +544,10 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
         const formula = rawFormula.replace(/\${([\w.]+)}/g, (_: string, key: string) => {
           const value = getNestedValue(context, key)
           console.log('Replacing variable:', { key, value, type: typeof value })
-          
           if (value === undefined) {
             throw new Error(`Variable ${key} not found in context`)
           }
-          
-          // Handle different types
+          // Handle different types to ensure string output
           if (typeof value === 'boolean') {
             return value ? '1' : '0'
           }
@@ -554,7 +557,7 @@ const getOutputData = async (workflowId: string, version?: number): Promise<Outp
             if (value.toLowerCase() === 'false') return '0'
             // Try to convert to number
             const num = Number(value)
-            return isNaN(num) ? '0' : String(num)
+            return isNaN(num) ? `"${value}"` : String(num)
           }
           if (typeof value === 'object') {
             if (value === null) return '0'
@@ -668,63 +671,43 @@ export function OutputSection({ workflowId, workflow, version, onChange }: Outpu
     isLoading: false 
   })
 
-  // Fetch total versions when component mounts or workflow ID changes
-  useEffect(() => {
-    async function fetchTotalVersions() {
-      if (!workflowId) return
-
-      try {
-        const response = await fetch(`/api/workflow/${workflowId}/versions`)
-        const data = await response.json()
-        
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch versions')
-        }
-
-        setTotalVersions(data.totalVersions)
-      } catch (error) {
-        console.error('Error fetching versions:', error)
-      }
-    }
-
-    fetchTotalVersions()
-  }, [workflowId])
-
   // Update output data when workflow changes
   useEffect(() => {
-    async function updateOutput() {
-      if (!workflowId) return
-
-      try {
-        const result = await getOutputData(workflowId, version)
-        
-        // Initialize output schema if it doesn't exist
-        if (!workflow?.output_schema) {
-          const newSchema: Record<string, boolean> = Object.keys(result.data).reduce((acc, key) => ({
-            ...acc,
-            [key]: true
-          }), {})
-          
-          onChange?.({
-            output_schema: newSchema
-          })
-        } else {
-          // Filter by output schema - only include fields that are toggled on
-          const outputSchema = workflow.output_schema
-          result.data = Object.fromEntries(
-            Object.entries(result.data).filter(([key]) => outputSchema[key] !== false)
+    try {
+      // Process workflow locally
+      const { data: result, debug } = processWorkflow({
+        input_data: workflow.input_data,
+        logic_blocks: workflow.logic_blocks || [],
+        calculations: workflow.calculations || [],
+        output_schema: workflow.output_schema || {}
+      })
+      
+      // Filter by output schema if it exists
+      const filteredData = workflow.output_schema
+        ? Object.fromEntries(
+            Object.entries(result).filter(([key]) => workflow.output_schema?.[key] !== false)
           )
-        }
-        
-        setOutputData(result)
-      } catch (error) {
-        console.error('Error updating output:', error)
-        setOutputData(prev => ({ ...prev, error: String(error) }))
-      }
-    }
+        : result
 
-    updateOutput()
-  }, [workflowId, version, workflow?.input_data, workflow?.logic_blocks, workflow?.calculations, workflow?.output_schema, onChange])
+      setOutputData({
+        data: filteredData,
+        debug: {
+          input: debug.input,
+          logicBlocks: debug.logicBlocks,
+          calculations: debug.calculations
+        },
+        error: undefined,
+        isLoading: false
+      })
+    } catch (error) {
+      console.error('Error processing workflow:', error)
+      setOutputData(prev => ({
+        ...prev,
+        error: String(error),
+        isLoading: false
+      }))
+    }
+  }, [workflow.input_data, workflow.logic_blocks, workflow.calculations, workflow.output_schema])
 
   return (
     <div className="space-y-4">

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { LogicBlock, Calculation } from '@/types/workflow'
+import { getLogicBlockPaths } from '@/lib/utils'
 
 export async function POST(request: Request) {
   try {
@@ -24,8 +25,33 @@ export async function POST(request: Request) {
       )
     }
 
-    // Get input schema from the parsed input
-    const inputSchema = Object.keys(parsedInput)
+    // Extract input schema using the same function as input-section
+    function extractAllKeys(data: any, prefix = ''): string[] {
+      let keys: string[] = [];
+      
+      if (data && typeof data === 'object') {
+        if (Array.isArray(data)) {
+          // For arrays, add both the array itself and its first item's structure
+          keys.push(prefix);
+          if (data.length > 0) {
+            keys = keys.concat(extractAllKeys(data[0], prefix));
+          }
+        } else {
+          for (const key in data) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            keys.push(fullKey);
+            
+            if (data[key] && typeof data[key] === 'object') {
+              keys = keys.concat(extractAllKeys(data[key], fullKey));
+            }
+          }
+        }
+      }
+      
+      return [...new Set(keys)];
+    }
+
+    const inputSchema = extractAllKeys(parsedInput)
 
     // Prepare the prompt for the AI
     const prompt = `Given this description of what the workflow should do:
@@ -46,11 +72,22 @@ Think creatively about how to use these fields to solve the problem. For example
 - Use array operations to find relevant items
 - Check for specific values in nested structures
 
+IMPORTANT RULES FOR HANDLING DATA:
+1. For nested fields, use dot notation (e.g., 'vitalSigns.temperature' not just 'temperature')
+2. For array items, use array notation with index (e.g., 'symptoms[0].severity')
+3. When comparing numbers:
+   - Remove units before comparison (e.g., '101.2°F' should be compared as 101.2)
+   - Use appropriate numeric operations (gt, lt, gte, lte)
+4. When comparing strings:
+   - Use 'equal' for exact matches
+   - Use 'has' for substring checks
+   - Use 'in' for array membership
+5. Don't repeat logic blocks with different inputs - combine them using conditions instead
+
 Generate a workflow that processes this data according to the description.
 Return a JSON object (without any markdown formatting, code blocks, or explanation) that has these fields:
 1. logic_blocks: Array of logic blocks that process the input data
 2. calculations: Array of calculations that compute new values
-3. output_schema: Object specifying which fields should be included in the output
 
 Each logic block should have:
 - input_name: One of the available input fields listed above (can include array indices and nested paths like 'work_experience[0].job_title')
@@ -172,8 +209,6 @@ Each calculation should have:
   CORRECT: "(Number(\${score1}) + Number(\${score2})) * 0.5"  // Balanced parentheses
 - output_name: a descriptive name for the calculated field
 
-The output_schema should include all relevant input fields and computed results.
-
 IMPORTANT: 
 1. All logic block output_values and default_values used in calculations must be numbers
 2. All formulas must be valid JavaScript expressions that evaluate to numbers
@@ -236,66 +271,132 @@ IMPORTANT:
     if (!generatedWorkflow.calculations || !Array.isArray(generatedWorkflow.calculations)) {
       throw new Error('Invalid workflow structure: missing or invalid calculations')
     }
-    if (!generatedWorkflow.output_schema || typeof generatedWorkflow.output_schema !== 'object') {
-      throw new Error('Invalid workflow structure: missing or invalid output_schema')
-    }
 
-    // Add validation for calculations
-    for (const calc of generatedWorkflow.calculations) {
-      if (typeof calc.formula !== 'string') {
-        // Convert non-string formulas to strings
-        calc.formula = String(calc.formula)
+    // Add validation functions
+    const VALID_OPERATIONS = ['equal', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'is', 'between', 'has'];
+
+    function validateLogicBlock(block: LogicBlock): void {
+      if (!block.input_name || typeof block.input_name !== 'string') {
+        throw new Error(`Invalid input_name in logic block: ${JSON.stringify(block)}`);
+      }
+      if (!block.output_name || typeof block.output_name !== 'string') {
+        throw new Error(`Invalid output_name in logic block: ${JSON.stringify(block)}`);
+      }
+      if (!block.operation || !VALID_OPERATIONS.includes(block.operation)) {
+        throw new Error(`Invalid operation in logic block: ${JSON.stringify(block)}`);
+      }
+      if (!Array.isArray(block.values)) {
+        throw new Error(`Invalid values in logic block: ${JSON.stringify(block)}`);
+      }
+      if (block.output_value !== undefined && typeof block.output_value !== 'number' && typeof block.output_value !== 'string') {
+        throw new Error(`Invalid output_value in logic block: ${JSON.stringify(block)}`);
+      }
+      if (block.default_value !== undefined && typeof block.default_value !== 'number' && typeof block.default_value !== 'string') {
+        throw new Error(`Invalid default_value in logic block: ${JSON.stringify(block)}`);
       }
       
-      // Ensure formula is not an empty object
-      if (calc.formula === '{}' || calc.formula === 'undefined') {
-        throw new Error('Invalid calculation: formula cannot be empty or undefined')
-      }
-
-      // Check for JSON objects in formula
-      if (calc.formula.includes('{') && !calc.formula.includes('${')) {
-        throw new Error('Invalid calculation: formula contains invalid JSON object or incorrect variable syntax')
-      }
-
-      // Validate formula structure
-      try {
-        // Remove ${var} placeholders for validation
-        const testFormula = calc.formula.replace(/\${[\w.]+}/g, '1')
-        
-        // Test if it's a valid JavaScript expression
-        new Function(`return ${testFormula}`)
-        
-        // Check if formula contains at least one operator
-        if (!/[+\-*/%<>=!?:]/.test(testFormula)) {
-          throw new Error('Formula must contain at least one mathematical or logical operator')
+      // Validate conditions if present
+      if (block.conditions) {
+        if (!Array.isArray(block.conditions)) {
+          throw new Error(`Invalid conditions array in logic block: ${JSON.stringify(block)}`);
         }
-
-        // Check if formula evaluates to a number
-        const result = eval(testFormula)
-        if (typeof result !== 'number' || isNaN(result)) {
-          throw new Error('Formula must evaluate to a number')
-        }
-      } catch (error: any) {
-        throw new Error(`Invalid formula "${calc.formula}": ${error.message}`)
+        block.conditions.forEach((condition, index) => {
+          if (!condition.operator || !['and', 'or'].includes(condition.operator)) {
+            throw new Error(`Invalid operator in condition ${index}: ${JSON.stringify(condition)}`);
+          }
+          if (!condition.input_name || typeof condition.input_name !== 'string') {
+            throw new Error(`Invalid input_name in condition ${index}: ${JSON.stringify(condition)}`);
+          }
+          if (!condition.operation || !VALID_OPERATIONS.includes(condition.operation)) {
+            throw new Error(`Invalid operation in condition ${index}: ${JSON.stringify(condition)}`);
+          }
+          if (!Array.isArray(condition.values)) {
+            throw new Error(`Invalid values in condition ${index}: ${JSON.stringify(condition)}`);
+          }
+        });
       }
     }
 
-    // Add IDs to logic blocks and calculations if they don't have them
-    const logic_blocks = generatedWorkflow.logic_blocks.map((block: LogicBlock) => ({
-      ...block,
-      id: block.id || crypto.randomUUID()
-    }))
+    function validateCalculation(calc: Calculation): void {
+      if (!calc.output_name || typeof calc.output_name !== 'string') {
+        throw new Error(`Invalid output_name in calculation: ${JSON.stringify(calc)}`);
+      }
+      if (!calc.formula || typeof calc.formula !== 'string') {
+        throw new Error(`Invalid formula in calculation: ${JSON.stringify(calc)}`);
+      }
+      
+      // Basic formula validation
+      const formula = calc.formula;
+      let parenCount = 0;
+      
+      // Check parentheses balance
+      for (const char of formula) {
+        if (char === '(') parenCount++;
+        if (char === ')') parenCount--;
+        if (parenCount < 0) {
+          throw new Error(`Unbalanced parentheses in formula: ${formula}`);
+        }
+      }
+      if (parenCount !== 0) {
+        throw new Error(`Unbalanced parentheses in formula: ${formula}`);
+      }
+      
+      // Check for valid variable references
+      const varRefs = formula.match(/\${[^}]+}/g) || [];
+      if (varRefs.length === 0) {
+        throw new Error(`Formula contains no variable references: ${formula}`);
+      }
+    }
 
-    const calculations = generatedWorkflow.calculations.map((calc: Calculation) => ({
-      ...calc,
-      id: calc.id || crypto.randomUUID()
-    }))
+    // Validate each logic block and calculation
+    try {
+      // First validate all logic blocks
+      const availableVariables = new Set<string>();
+      
+      // Add all input paths to available variables
+      const inputPaths = getLogicBlockPaths(parsedInput);
+      inputPaths.forEach((path: string) => availableVariables.add(path));
 
-    return NextResponse.json({
-      logic_blocks,
-      calculations,
-      output_schema: generatedWorkflow.output_schema
-    })
+      // Log available paths for debugging
+      console.log('Available input paths:', [...availableVariables]);
+
+      // Validate logic blocks and collect their output names
+      generatedWorkflow.logic_blocks.forEach((block: LogicBlock, index: number) => {
+        validateLogicBlock(block);
+        if (block.output_name) {
+          availableVariables.add(block.output_name);
+        }
+      });
+
+      // Then validate calculations and ensure they only use available variables
+      generatedWorkflow.calculations.forEach((calc: Calculation, index: number) => {
+        validateCalculation(calc);
+        
+        // Extract all variable references from the formula
+        const varRefs = calc.formula.match(/\${([^}]+)}/g) || [];
+        const variables = varRefs.map((ref: string) => ref.slice(2, -1));
+        
+        // Check if all referenced variables exist
+        variables.forEach((variable: string) => {
+          if (!availableVariables.has(variable)) {
+            throw new Error(`Calculation "${calc.output_name}" references undefined variable "${variable}". Available variables: ${[...availableVariables].join(', ')}`);
+          }
+        });
+        
+        // Add calculation output to available variables for subsequent calculations
+        availableVariables.add(calc.output_name);
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Workflow validation failed: ${error.message}`);
+      }
+      throw new Error('Workflow validation failed: Unknown error');
+    }
+
+    // Remove output_schema if present as it's generated later
+    delete generatedWorkflow.output_schema;
+
+    return NextResponse.json(generatedWorkflow)
   } catch (error: any) {
     console.error('Error in workflow generation:', error)
     return NextResponse.json(

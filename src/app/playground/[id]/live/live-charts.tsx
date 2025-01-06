@@ -558,6 +558,7 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                     <TableHead className="w-4"></TableHead>
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Input ID</TableHead>
+                    <TableHead>Version</TableHead>
                     {Array.from(new Set(filteredData.flatMap(item => 
                       item.output_data ? Object.keys(item.output_data) : []
                     ))).map((key) => (
@@ -576,6 +577,9 @@ export default function LiveCharts({ workflow, initialData }: Props) {
                           </TableCell>
                           <TableCell className="font-mono">
                             {item.id}
+                          </TableCell>
+                          <TableCell>
+                            {item.workflow_version || 'Latest'}
                           </TableCell>
                           {Array.from(new Set(filteredData.flatMap(item => 
                             item.output_data ? Object.keys(item.output_data) : []

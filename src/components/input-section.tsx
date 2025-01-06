@@ -21,19 +21,17 @@ function extractAllKeys(data: any, prefix = ''): string[] {
   let keys: string[] = [];
   
   if (data && typeof data === 'object') {
-    // Handle both arrays and objects
     if (Array.isArray(data)) {
-      // If it's an array, look at the first item for structure
+      // For arrays, add both the array itself and its first item's structure
+      keys.push(prefix);
       if (data.length > 0) {
         keys = keys.concat(extractAllKeys(data[0], prefix));
       }
     } else {
-      // Handle object
       for (const key in data) {
         const fullKey = prefix ? `${prefix}.${key}` : key;
         keys.push(fullKey);
         
-        // Recursively extract keys from nested objects and arrays
         if (data[key] && typeof data[key] === 'object') {
           keys = keys.concat(extractAllKeys(data[key], fullKey));
         }
@@ -41,7 +39,7 @@ function extractAllKeys(data: any, prefix = ''): string[] {
     }
   }
   
-  return [...new Set(keys)]; // Remove duplicates
+  return [...new Set(keys)];
 }
 
 export default function InputSection({ workflow, onInputChange, onInputDataChange }: InputSectionProps) {

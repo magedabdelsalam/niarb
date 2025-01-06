@@ -19,6 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select"
+import { cn } from "@/lib/utils"
+import { DragDropContext, DropResult } from '@hello-pangea/dnd'
 
 const defaultWorkflow: Workflow = {
   id: '',
@@ -40,6 +42,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
   const [workflow, setWorkflow] = useState<Workflow>(
     initialWorkflow || defaultWorkflow
   )
+  const [serverWorkflow, setServerWorkflow] = useState<Workflow | null>(initialWorkflow || null)
   const [isSaving, setIsSaving] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -47,10 +50,41 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
   const [isMakingLatest, setIsMakingLatest] = useState(false)
   const [totalVersions, setTotalVersions] = useState(1)
 
+  // Function to check if workflow has actual changes
+  const hasActualChanges = () => {
+    if (!serverWorkflow) return true // New workflow
+    
+    // Compare relevant fields
+    const relevantFields = ['name', 'input_schema', 'input_data', 'logic_blocks', 'calculations', 'output_schema'] as const
+    return relevantFields.some(field => {
+      // Handle special case for input_data which might be a string or object
+      if (field === 'input_data') {
+        const localData = typeof workflow.input_data === 'string' 
+          ? workflow.input_data 
+          : JSON.stringify(workflow.input_data)
+        const serverData = typeof serverWorkflow.input_data === 'string'
+          ? serverWorkflow.input_data
+          : JSON.stringify(serverWorkflow.input_data)
+        return localData !== serverData
+      }
+
+      // For arrays and objects, compare stringified versions with stable key order
+      const localValue = typeof workflow[field] === 'object'
+        ? JSON.stringify(workflow[field], Object.keys(workflow[field] || {}).sort())
+        : workflow[field]
+      const serverValue = typeof serverWorkflow[field] === 'object'
+        ? JSON.stringify(serverWorkflow[field], Object.keys(serverWorkflow[field] || {}).sort())
+        : serverWorkflow[field]
+      
+      return localValue !== serverValue
+    })
+  }
+
   // Update workflow when initialWorkflow changes (e.g., after page reload)
   useEffect(() => {
     if (initialWorkflow) {
       setWorkflow(initialWorkflow)
+      setServerWorkflow(initialWorkflow)
       setTotalVersions(initialWorkflow.version || 1)
     }
   }, [initialWorkflow])
@@ -61,6 +95,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
 
     const subscription = subscribeToWorkflow(workflow.id, (updatedWorkflow) => {
       setWorkflow(updatedWorkflow)
+      setServerWorkflow(updatedWorkflow)
       setTotalVersions(updatedWorkflow.version || 1)
     })
 
@@ -101,6 +136,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       if (workflow.id) {
         await updateWorkflow(workflow.id, workflowData)
         router.refresh()
+        setServerWorkflow(workflow) // Update server state after successful save
         toast({
           title: "Success",
           description: "Workflow saved successfully"
@@ -108,6 +144,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       } else {
         const newWorkflow = await createWorkflow(workflowData)
         router.push(`/playground/${newWorkflow.id}`)
+        setServerWorkflow(newWorkflow) // Set initial server state
         toast({
           title: "Success",
           description: "Workflow created successfully"
@@ -238,6 +275,25 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     }
   }
 
+  const handleDiscardChanges = () => {
+    if (!serverWorkflow) return
+    setWorkflow(serverWorkflow)
+    toast({
+      title: "Changes Discarded",
+      description: "All changes have been discarded"
+    })
+  }
+
+  const handleDragEnd = (result: DropResult) => {
+    if (!result.destination) return
+
+    const newLogicBlocks = Array.from(workflow.logic_blocks || [])
+    const [reorderedItem] = newLogicBlocks.splice(result.source.index, 1)
+    newLogicBlocks.splice(result.destination.index, 0, reorderedItem)
+    
+    handleWorkflowUpdate({ logic_blocks: newLogicBlocks })
+  }
+
   return (
     <div className="flex flex-col gap-6 p-4">
       <header className="flex items-center justify-between">
@@ -306,12 +362,22 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </Button>
+              {hasActualChanges() && (
+                <Button
+                  variant="ghost"
+                  onClick={handleDiscardChanges}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  Discard Changes
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={isSaving || !hasActualChanges()}
+                className={cn(hasActualChanges() && "border-orange-500 hover:border-orange-600")}
               >
-                {isSaving ? 'Saving...' : 'Save'}
+                {isSaving ? 'Saving...' : hasActualChanges() ? 'Save Changes' : 'Saved'}
               </Button>
               <Button
                 onClick={handlePublish}
@@ -325,8 +391,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
             <Button
               onClick={handleSave}
               disabled={isSaving}
+              className={cn(hasActualChanges() && "border-orange-500 hover:border-orange-600")}
             >
-              {isSaving ? 'Creating...' : 'Create Workflow'}
+              {isSaving ? 'Creating...' : hasActualChanges() ? 'Save New Workflow' : 'Create Workflow'}
             </Button>
           )}
         </div>
@@ -345,6 +412,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
           <LogicSection
             workflow={workflow}
             onChange={handleWorkflowUpdate}
+            onDragEnd={handleDragEnd}
           />
         </Card>
         

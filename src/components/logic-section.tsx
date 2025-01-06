@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from './ui/button'
 import { Switch } from './ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
@@ -19,10 +19,12 @@ import { Label } from './ui/label'
 import { getAllPaths } from '@/lib/utils'
 import { Combobox } from '@/components/ui/combobox'
 import { Textarea } from '@/components/ui/textarea'
+import { processWorkflow } from '@/lib/workflow'
 
 interface LogicSectionProps {
   workflow: Workflow
   onChange: (updates: Partial<Workflow>) => void
+  onDragEnd?: (result: DropResult) => void
 }
 
 const InputNameCombobox = ({ 
@@ -79,7 +81,7 @@ const InputNameCombobox = ({
   )
 }
 
-export function LogicSection({ workflow, onChange }: LogicSectionProps) {
+export function LogicSection({ workflow, onChange, onDragEnd }: LogicSectionProps) {
   const { toast } = useToast()
   const [parsedInput, setParsedInput] = useState<Record<string, any>>({})
   const [description, setDescription] = useState('')
@@ -143,6 +145,42 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
     }
   }, [workflow.input_data])
 
+  // Process outputs locally when logic blocks change
+  const processLocalOutput = useCallback(() => {
+    try {
+      const workflowData = {
+        input_data: parsedInput,
+        logic_blocks: workflow.logic_blocks || [],
+        calculations: workflow.calculations || [],
+        output_schema: workflow.output_schema || {}
+      }
+
+      const result = processWorkflow(workflowData)
+      
+      // Extract just the data part from the result
+      const output = result.data || {}
+
+      // Update the workflow with the new output
+      onChange({
+        logic_blocks: workflow.logic_blocks,
+        calculations: workflow.calculations,
+        output_schema: output
+      })
+    } catch (error) {
+      console.error('Error processing local output:', error)
+    }
+  }, [parsedInput, workflow.logic_blocks, workflow.calculations, workflow.output_schema, onChange])
+
+  // Update local output whenever logic blocks or calculations change
+  useEffect(() => {
+    const hasLogicBlocks = (workflow.logic_blocks || []).length > 0
+    const hasCalculations = (workflow.calculations || []).length > 0
+    
+    if (workflow.input_data && (hasLogicBlocks || hasCalculations)) {
+      processLocalOutput()
+    }
+  }, [workflow.logic_blocks, workflow.calculations, parsedInput, workflow.input_data, processLocalOutput])
+
   const addLogicBlock = () => {
     const newBlock: LogicBlock = {
       id: crypto.randomUUID(),
@@ -160,7 +198,15 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
 
   const getAvailablePaths = (currentBlockIndex: number) => {
     // Get paths from input data
-    const inputPaths = getAllPaths(parsedInput);
+    const inputPaths = getAllPaths(parsedInput).map(path => {
+      // If the path starts with the root object name, keep it as is
+      if (path.startsWith('patientInfo.') || path.startsWith('orderInfo.') || path.startsWith('userData.')) {
+        return path;
+      }
+      // Otherwise, prefix it with the root object name if it exists in parsedInput
+      const rootKey = Object.keys(parsedInput)[0];
+      return rootKey ? `${rootKey}.${path}` : path;
+    });
     
     // Get output names from previous logic blocks
     const outputPaths = workflow.logic_blocks
@@ -168,8 +214,8 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
       .map(block => block.output_name)
       .filter(Boolean) as string[];
     
-    // Combine input paths and output paths
-    return [...inputPaths, ...outputPaths];
+    // Remove duplicates and sort
+    return [...new Set([...inputPaths, ...outputPaths])].sort();
   }
 
   const addCalculation = () => {
@@ -267,6 +313,12 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
 
     try {
       setIsGenerating(true)
+      
+      // Ensure input_data is properly stringified
+      const input_data = typeof workflow.input_data === 'string' 
+        ? workflow.input_data 
+        : JSON.stringify(workflow.input_data)
+
       const response = await fetch('/api/workflow/generate', {
         method: 'POST',
         headers: {
@@ -276,7 +328,7 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
           description,
           model_name: modelName,
           api_key: apiKey,
-          input_data: workflow.input_data
+          input_data
         })
       })
       const data = await response.json()
@@ -358,7 +410,7 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
       </div>
 
       {/* Logic Blocks */}
-      <DragDropContext onDragEnd={handleDragEnd}>
+      <DragDropContext onDragEnd={onDragEnd || handleDragEnd}>
         <Droppable droppableId="logic-blocks">
           {(provided: DroppableProvided) => (
             <div 
@@ -366,8 +418,8 @@ export function LogicSection({ workflow, onChange }: LogicSectionProps) {
               {...provided.droppableProps}
               className="space-y-4"
             >
-              {workflow.logic_blocks?.map((block, index) => (
-                <Draggable key={block.id} draggableId={block.id} index={index}>
+              {(workflow.logic_blocks || []).map((block, index) => (
+                <Draggable key={block.id || `logic-block-${index}`} draggableId={block.id || `logic-block-${index}`} index={index}>
                   {(provided: DraggableProvided) => (
                     <Card 
                       ref={provided.innerRef}
