@@ -148,6 +148,15 @@ export function LogicSection({ workflow, onChange, onDragEnd }: LogicSectionProp
   // Process outputs locally when logic blocks change
   const processLocalOutput = useCallback(() => {
     try {
+      // Skip processing if there's no logic to process
+      const hasLogicBlocks = (workflow.logic_blocks || []).length > 0
+      const hasCalculations = (workflow.calculations || []).length > 0
+      
+      // If there's no logic and no current output schema, skip processing
+      if (!hasLogicBlocks && !hasCalculations) {
+        return
+      }
+
       const workflowData = {
         input_data: parsedInput,
         logic_blocks: workflow.logic_blocks || [],
@@ -156,16 +165,15 @@ export function LogicSection({ workflow, onChange, onDragEnd }: LogicSectionProp
       }
 
       const result = processWorkflow(workflowData)
-      
-      // Extract just the data part from the result
       const output = result.data || {}
 
-      // Update the workflow with the new output
-      onChange({
-        logic_blocks: workflow.logic_blocks,
-        calculations: workflow.calculations,
-        output_schema: output
-      })
+      // Only update if we have logic blocks or calculations AND the output has changed
+      if ((hasLogicBlocks || hasCalculations) && 
+          JSON.stringify(workflow.output_schema || {}) !== JSON.stringify(output)) {
+        onChange({
+          output_schema: Object.keys(output).length > 0 ? output : {}
+        })
+      }
     } catch (error) {
       console.error('Error processing local output:', error)
     }
@@ -173,13 +181,15 @@ export function LogicSection({ workflow, onChange, onDragEnd }: LogicSectionProp
 
   // Update local output whenever logic blocks or calculations change
   useEffect(() => {
+    // Only run if we have input data and either logic blocks or calculations
     const hasLogicBlocks = (workflow.logic_blocks || []).length > 0
     const hasCalculations = (workflow.calculations || []).length > 0
     
     if (workflow.input_data && (hasLogicBlocks || hasCalculations)) {
-      processLocalOutput()
+      const timeoutId = setTimeout(processLocalOutput, 0)
+      return () => clearTimeout(timeoutId)
     }
-  }, [workflow.logic_blocks, workflow.calculations, parsedInput, workflow.input_data, processLocalOutput])
+  }, [workflow.logic_blocks, workflow.calculations, workflow.input_data, processLocalOutput])
 
   const addLogicBlock = () => {
     const newBlock: LogicBlock = {

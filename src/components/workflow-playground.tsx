@@ -55,7 +55,8 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     if (!serverWorkflow) return true // New workflow
     
     // Compare relevant fields
-    const relevantFields = ['name', 'input_schema', 'input_data', 'logic_blocks', 'calculations', 'output_schema'] as const
+    const relevantFields = ['name', 'input_schema', 'input_data', 'logic_blocks', 'calculations'] as const
+    
     return relevantFields.some(field => {
       // Handle special case for input_data which might be a string or object
       if (field === 'input_data') {
@@ -68,14 +69,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
         return localData !== serverData
       }
 
-      // For arrays and objects, compare stringified versions with stable key order
-      const localValue = typeof workflow[field] === 'object'
-        ? JSON.stringify(workflow[field], Object.keys(workflow[field] || {}).sort())
-        : workflow[field]
-      const serverValue = typeof serverWorkflow[field] === 'object'
-        ? JSON.stringify(serverWorkflow[field], Object.keys(serverWorkflow[field] || {}).sort())
-        : serverWorkflow[field]
-      
+      // For arrays and objects, compare stringified versions
+      const localValue = JSON.stringify(workflow[field] || [])
+      const serverValue = JSON.stringify(serverWorkflow[field] || [])
       return localValue !== serverValue
     })
   }
@@ -114,10 +110,21 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
   }
 
   const handleWorkflowUpdate = (update: Partial<Workflow>) => {
-    setWorkflow(prev => ({
-      ...prev,
-      ...update
-    }))
+    // Create a new workflow object with the updates
+    const updatedWorkflow = {
+      ...workflow,
+      ...update,
+      // Ensure output_schema is a new object to prevent reference issues
+      output_schema: update.output_schema ? { ...update.output_schema } : workflow.output_schema
+    }
+    
+    // Only update if there are actual changes
+    const currentStr = JSON.stringify(workflow)
+    const updatedStr = JSON.stringify(updatedWorkflow)
+    
+    if (currentStr !== updatedStr) {
+      setWorkflow(updatedWorkflow)
+    }
   }
 
   const handleSave = async () => {
@@ -277,7 +284,17 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
 
   const handleDiscardChanges = () => {
     if (!serverWorkflow) return
-    setWorkflow(serverWorkflow)
+    
+    // Create a fresh copy of the server workflow
+    const restoredWorkflow = {
+      ...serverWorkflow,
+      input_schema: [...(serverWorkflow.input_schema || [])],
+      logic_blocks: [...(serverWorkflow.logic_blocks || [])],
+      calculations: [...(serverWorkflow.calculations || [])],
+      input_data: serverWorkflow.input_data || ''
+    }
+    
+    setWorkflow(restoredWorkflow)
     toast({
       title: "Changes Discarded",
       description: "All changes have been discarded"
