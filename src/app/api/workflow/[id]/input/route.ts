@@ -4,10 +4,10 @@ import { Database } from '@/types/supabase'
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params
+    const { id } = params
     const url = new URL(request.url)
     const version = url.searchParams.get('version')
 

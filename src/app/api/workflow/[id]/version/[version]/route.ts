@@ -7,10 +7,10 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string; version: string }> }
+  { params }: { params: { id: string; version: string } }
 ) {
   try {
-    const { id, version } = await params
+    const { id, version } = params
 
     // Get current workflow to check latest version
     const { data: currentWorkflow, error: currentError } = await supabase

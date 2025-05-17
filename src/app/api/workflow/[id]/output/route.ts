@@ -226,13 +226,13 @@ function processWorkflow(workflow: Workflow, inputData: Json) {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
     const { searchParams } = new URL(request.url)
     const inputId = searchParams.get('input_id')
     const version = searchParams.get('version')
-    const { id } = await params
+    const { id } = params
 
     if (!id) {
       return NextResponse.json(
