@@ -106,14 +106,12 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
 
   const handleInputDataChange = async (value: string) => {
     try {
-      console.log('Handling input data change:', value)
       
       // Try parsing as JSON first to validate
       const jsonData = JSON.parse(value)
       if (typeof jsonData === 'object' && jsonData !== null) {
         // Extract all keys including nested ones
         const keys = extractAllKeys(jsonData)
-        console.log('Extracted keys from JSON:', keys)
         
         // Update the input schema first
         onInputChange(keys)
@@ -134,7 +132,6 @@ export default function InputSection({ workflow, onInputChange, onInputDataChang
         const lines = value.trim().split('\n')
         if (lines[0]) {
           const headers = lines[0].split(',').map(h => h.trim()).filter(Boolean)
-          console.log('Extracted headers from CSV:', headers)
           
           // Update the input schema first
           onInputChange(headers)
