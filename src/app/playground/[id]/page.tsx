@@ -3,13 +3,13 @@ import { getWorkflow } from '@/app/actions'
 import { WorkflowPlayground } from '@/components/workflow-playground'
 
 type PageProps = {
-  params: Promise<{
+  params: {
     id: string
-  }>
+  }
 }
 
 export default async function Page({ params }: PageProps) {
-  const { id } = await params
+  const { id } = params
   
   try {
     const workflow = await getWorkflow(id)
@@ -21,4 +21,4 @@ export default async function Page({ params }: PageProps) {
     console.error('Error loading workflow:', error)
     return notFound()
   }
-} 
+}

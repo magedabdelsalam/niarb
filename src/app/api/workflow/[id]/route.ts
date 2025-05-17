@@ -4,10 +4,10 @@ import { Database } from '@/types/supabase'
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params
+    const { id } = params
     const body = await request.json()
     const shouldCreateVersion = body.create_version === true
     delete body.create_version
@@ -72,10 +72,10 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params
+    const { id } = params
 
     if (!id) {
       return NextResponse.json(
@@ -112,10 +112,10 @@ export async function DELETE(
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params
+    const { id } = params
 
     if (!id) {
       return NextResponse.json(
