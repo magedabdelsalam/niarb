@@ -33,10 +33,11 @@ npm install
 ```
 
 3. Set up environment variables:
-   - Copy `.env.local.example` to `.env.local`
+   - Create a `.env.local` file from `.env.local.example`
    - Add your Supabase credentials:
      - `NEXT_PUBLIC_SUPABASE_URL`
      - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+     - `SUPABASE_SERVICE_ROLE_KEY`
 
 4. Run the development server:
 ```bash
