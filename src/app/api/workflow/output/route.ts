@@ -2,11 +2,36 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import type { Workflow, LogicBlock, Calculation, Condition } from '@/types/workflow'
 
-// Helper function to get nested value
-function getNestedValue(obj: any, path: string) {
-  return path.split('.').reduce((current, key) => {
-    return current && current[key] !== undefined ? current[key] : undefined
-  }, obj)
+// Helper function to get nested value with array support
+function getNestedValue(obj: any, path: string): any {
+  const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1')
+  const keys = normalizedPath.split('.')
+
+  function traverse(current: any, remainingKeys: string[]): any {
+    if (remainingKeys.length === 0) return current
+
+    const [key, ...rest] = remainingKeys
+
+    if (current === null || current === undefined) {
+      return undefined
+    }
+
+    if (Array.isArray(current)) {
+      if (/^\d+$/.test(key)) {
+        return traverse(current[Number(key)], rest)
+      }
+      const results = current.map(item => traverse(item, [key, ...rest]))
+      return (results as any).flat().filter((x: any) => x !== undefined)
+    }
+
+    if (typeof current === 'object') {
+      return traverse((current as any)[key], rest)
+    }
+
+    return undefined
+  }
+
+  return traverse(obj, keys)
 }
 
 function processWorkflow(workflow: Workflow, inputData: any) {
