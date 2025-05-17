@@ -67,6 +67,8 @@ export function validateFormula(formula: string, availableVariables: string[]): 
   return { isValid: true }
 }
 
+import { Script, createContext } from 'vm'
+
 export function evaluateFormula(formula: string, context: Record<string, any>): number {
   // Create a safe evaluation context with only allowed functions
   const safeContext = {
@@ -87,11 +89,13 @@ export function evaluateFormula(formula: string, context: Record<string, any>): 
       match => ALLOWED_FUNCTIONS.includes(match) ? match : `context.${match}`
     )
 
-    // Create a function that evaluates the formula in the safe context
-    const evaluator = new Function('context', `return ${processedFormula}`)
-    return evaluator(safeContext)
+    // Evaluate the formula in a sandboxed VM context
+    const script = new Script(processedFormula)
+    const sandbox = { context: safeContext }
+    const vmContext = createContext(sandbox)
+    return script.runInContext(vmContext)
   } catch (error) {
     console.error('Error evaluating formula:', error)
     throw new Error('Invalid formula')
   }
-} 
+}
