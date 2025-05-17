@@ -28,7 +28,6 @@ interface ProcessResult {
 // Helper function to get nested value
 function getNestedValue(obj: any, path: string): any {
   // Log the input for debugging
-  console.log('Getting nested value:', { path, obj })
 
   // Handle array notation in path (e.g., "items[0].name" or "items.0.name")
   const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1')
@@ -41,7 +40,6 @@ function getNestedValue(obj: any, path: string): any {
     const rest = remainingKeys.slice(1)
 
     if (current === null || current === undefined) {
-      console.log('Path traversal stopped at:', key)
       return undefined
     }
 
@@ -61,12 +59,10 @@ function getNestedValue(obj: any, path: string): any {
       return traverse(current[key], rest)
     }
 
-    console.log('Cannot traverse further from:', current)
     return undefined
   }
 
   const result = traverse(obj, keys)
-  console.log('Found value:', result)
   return result
 }
 
@@ -451,10 +447,6 @@ export function processWorkflow(workflow: WorkflowData): ProcessResult {
           .replace(/''/g, '0')
           .replace(/""/g, '0')
         
-        console.log('Processing calculation:', {
-          original: formula,
-          normalized: normalizedFormula
-        })
         
         const result = new Function(`return ${normalizedFormula}`)()
         

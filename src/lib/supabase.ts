@@ -26,7 +26,6 @@ export function subscribeToWorkflow(
       },
       (payload) => {
         if (payload.new) {
-          console.log('Subscription received update:', payload.new)
           onUpdate(payload.new as Workflow)
         }
       }
