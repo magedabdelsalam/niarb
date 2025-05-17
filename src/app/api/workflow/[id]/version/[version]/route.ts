@@ -1,16 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string; version: string } }
-) {
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; version: string }> }
+): Promise<NextResponse> {
   try {
-    const { id, version } = params
+    const { id, version } = await params
 
     // Get current workflow to check latest version
     const { data: currentWorkflow, error: currentError } = await supabase

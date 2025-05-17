@@ -3,13 +3,13 @@ import { getWorkflow } from '@/app/actions'
 import { WorkflowPlayground } from '@/components/workflow-playground'
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 export default async function Page({ params }: PageProps) {
-  const { id } = params
+  const { id } = await params
   
   try {
     const workflow = await getWorkflow(id)

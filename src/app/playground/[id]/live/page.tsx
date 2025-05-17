@@ -67,12 +67,12 @@ async function getLiveData(id: string) {
 }
 
 interface PageProps {
-  params: { id: string }
+  params: Promise<{ id: string }>
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
 
 export default async function LivePage({ params, searchParams }: PageProps) {
-  const { id } = params
+  const { id } = await params
   const { version } = await searchParams as { version?: string }
   const workflow = await getWorkflow(id, version)
   const inputs = await getLiveData(id)

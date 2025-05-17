@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Database } from '@/types/supabase'
 
 export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
-    const { id } = params
+    const { id } = await params
     const url = new URL(request.url)
     const version = url.searchParams.get('version')
 
