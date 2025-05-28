@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import type { WorkflowData } from '@/types/workflow'
@@ -10,7 +10,7 @@ interface WorkflowListProps {
   initialWorkflows: WorkflowData[]
 }
 
-export function WorkflowList({ initialWorkflows }: WorkflowListProps) {
+function WorkflowListComponent({ initialWorkflows }: WorkflowListProps) {
   const [workflows, setWorkflows] = useState(initialWorkflows)
 
   useEffect(() => {
@@ -57,4 +57,6 @@ export function WorkflowList({ initialWorkflows }: WorkflowListProps) {
       )}
     </div>
   )
-} 
+}
+
+export const WorkflowList = React.memo(WorkflowListComponent)

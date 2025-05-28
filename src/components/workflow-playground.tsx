@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
@@ -36,7 +36,7 @@ interface WorkflowPlaygroundProps {
   initialWorkflow?: Workflow
 }
 
-export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps) {
+function WorkflowPlaygroundComponent({ initialWorkflow }: WorkflowPlaygroundProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [workflow, setWorkflow] = useState<Workflow>(
@@ -51,7 +51,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
   const [totalVersions, setTotalVersions] = useState(1)
 
   // Function to check if workflow has actual changes
-  const hasActualChanges = () => {
+  const hasActualChanges = useCallback(() => {
     if (!serverWorkflow) return true // New workflow
     
     // Compare relevant fields
@@ -74,7 +74,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       const serverValue = JSON.stringify(serverWorkflow[field] || [])
       return localValue !== serverValue
     })
-  }
+  }, [workflow, serverWorkflow])
 
   // Update workflow when initialWorkflow changes (e.g., after page reload)
   useEffect(() => {
@@ -100,16 +100,15 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     }
   }, [workflow.id])
 
-  const handleInputChange = (input_schema: string[]) => {
+  const handleInputChange = useCallback((input_schema: string[]) => {
     setWorkflow(prev => ({ ...prev, input_schema }))
-  }
+  }, [])
 
-  const handleInputDataChange = (input_data: string) => {
-    console.log('Updating workflow input data:', input_data)
+  const handleInputDataChange = useCallback((input_data: string) => {
     setWorkflow(prev => ({ ...prev, input_data }))
-  }
+  }, [])
 
-  const handleWorkflowUpdate = (update: Partial<Workflow>) => {
+  const handleWorkflowUpdate = useCallback((update: Partial<Workflow>) => {
     // Create a new workflow object with the updates
     const updatedWorkflow = {
       ...workflow,
@@ -125,9 +124,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     if (currentStr !== updatedStr) {
       setWorkflow(updatedWorkflow)
     }
-  }
+  }, [workflow])
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     try {
       setIsSaving(true)
       // Prepare complete workflow data
@@ -167,9 +166,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     } finally {
       setIsSaving(false)
     }
-  }
+  }, [workflow])
 
-  const handlePublish = async () => {
+  const handlePublish = useCallback(async () => {
     try {
       setIsPublishing(true)
       // Prepare complete workflow data
@@ -200,9 +199,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     } finally {
       setIsPublishing(false)
     }
-  }
+  }, [workflow])
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (!workflow.id) return
 
     try {
@@ -223,9 +222,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     } finally {
       setIsDeleting(false)
     }
-  }
+  }, [workflow.id])
 
-  const handleVersionChange = async (version: string) => {
+  const handleVersionChange = useCallback(async (version: string) => {
     try {
       setIsLoadingVersion(true)
       const response = await fetch(`/api/workflow/${workflow.id}/version/${version}`)
@@ -249,9 +248,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     } finally {
       setIsLoadingVersion(false)
     }
-  }
+  }, [workflow.id, handleWorkflowUpdate])
 
-  const handleMakeLatest = async () => {
+  const handleMakeLatest = useCallback(async () => {
     if (!workflow.id || !workflow.version) return
 
     try {
@@ -280,9 +279,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     } finally {
       setIsMakingLatest(false)
     }
-  }
+  }, [workflow.id, workflow.version])
 
-  const handleDiscardChanges = () => {
+  const handleDiscardChanges = useCallback(() => {
     if (!serverWorkflow) return
     
     // Create a fresh copy of the server workflow
@@ -299,9 +298,9 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       title: "Changes Discarded",
       description: "All changes have been discarded"
     })
-  }
+  }, [serverWorkflow])
 
-  const handleDragEnd = (result: DropResult) => {
+  const handleDragEnd = useCallback((result: DropResult) => {
     if (!result.destination) return
 
     const newLogicBlocks = Array.from(workflow.logic_blocks || [])
@@ -309,7 +308,7 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
     newLogicBlocks.splice(result.destination.index, 0, reorderedItem)
     
     handleWorkflowUpdate({ logic_blocks: newLogicBlocks })
-  }
+  }, [workflow.logic_blocks, handleWorkflowUpdate])
 
   return (
     <div className="flex flex-col gap-6 p-4">
@@ -443,4 +442,6 @@ export function WorkflowPlayground({ initialWorkflow }: WorkflowPlaygroundProps)
       </div>
     </div>
   )
-} 
+}
+
+export const WorkflowPlayground = React.memo(WorkflowPlaygroundComponent)

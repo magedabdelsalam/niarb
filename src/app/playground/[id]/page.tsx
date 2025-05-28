@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { getWorkflow } from '@/app/actions'
-import { WorkflowPlayground } from '@/components/workflow-playground'
+import dynamic from 'next/dynamic'
+
+const WorkflowPlayground = dynamic(() => import('@/components/workflow-playground'), { ssr: false })
 
 type PageProps = {
   params: Promise<{
